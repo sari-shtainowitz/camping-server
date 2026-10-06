@@ -1,0 +1,59 @@
+# ---------------------------------------------------------------------------
+#  Camping project - root .gitignore
+#  Server (.NET) + Client (React/Vite). Client/ also has its own .gitignore.
+# ---------------------------------------------------------------------------
+
+# --- .NET build output ---
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+build/
+publish/
+*.dll
+*.exe
+*.pdb
+
+# --- .NET / Visual Studio / Rider ---
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.DotSettings.user
+project.lock.json
+*.received.*
+
+# --- Test / coverage output ---
+[Tt]est[Rr]esults/
+[Cc]overage*/
+*.trx
+*.coverage
+*.coveragexml
+
+# --- Runtime logs (NLog writes to <app>/logs) ---
+logs/
+*.log
+
+# --- Local / secret configuration (never commit real secrets) ---
+appsettings.*.local.json
+appsettings.Local.json
+secrets.json
+*.secrets.json
+.env
+.env.*
+
+# --- Node / Vite client ---
+node_modules/
+Client/dist/
+Client/dist-ssr/
+*.local
+
+# --- OS noise ---
+.DS_Store
+Thumbs.db
