@@ -1,7 +1,7 @@
 using Camping.Core.Entities;
 using Camping.Core.Querying;
 
-namespace Camping.Service.Interfaces;
+namespace Camping.Core.Interfaces;
 
 /// <summary>
 /// Business operations for guest reviews.

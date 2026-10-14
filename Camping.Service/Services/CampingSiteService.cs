@@ -2,7 +2,6 @@ using Camping.Core.Entities;
 using Camping.Core.Interfaces;
 using Camping.Core.Querying;
 using Camping.Service.Exceptions;
-using Camping.Service.Interfaces;
 
 namespace Camping.Service.Services;
 
@@ -27,7 +26,20 @@ public class CampingSiteService : ICampingSiteService
         return _sites.GetPagedAsync(parameters, cancellationToken);
     }
 
+    // For reading: the site together with its amenities.
     public async Task<CampingSite> GetByIdAsync(int id, CancellationToken cancellationToken)
+    {
+        var site = await _sites.GetWithAmenitiesAsync(id, cancellationToken);
+        if (site is null)
+        {
+            throw new NotFoundException($"Camping site {id} was not found.");
+        }
+
+        return site;
+    }
+
+    // For writing: the plain row, so saving never touches the amenity links.
+    private async Task<CampingSite> RequireSiteAsync(int id, CancellationToken cancellationToken)
     {
         var site = await _sites.GetByIdAsync(id, cancellationToken);
         if (site is null)
@@ -60,7 +72,7 @@ public class CampingSiteService : ICampingSiteService
 
     public async Task<CampingSite> UpdateAsync(int id, CampingSite campingSite, CancellationToken cancellationToken)
     {
-        var existing = await GetByIdAsync(id, cancellationToken);
+        var existing = await RequireSiteAsync(id, cancellationToken);
 
         var name = (campingSite.Name ?? string.Empty).Trim();
         var address = (campingSite.Address ?? string.Empty).Trim();
@@ -78,7 +90,7 @@ public class CampingSiteService : ICampingSiteService
 
     public async Task DeleteAsync(int id, CancellationToken cancellationToken)
     {
-        await GetByIdAsync(id, cancellationToken);
+        await RequireSiteAsync(id, cancellationToken);
 
         if (await _sites.HasTentsAsync(id, cancellationToken))
         {

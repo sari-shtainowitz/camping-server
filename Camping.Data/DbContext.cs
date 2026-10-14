@@ -25,29 +25,33 @@ public class DbContext : Microsoft.EntityFrameworkCore.DbContext
     public DbSet<Amenity> Amenities => Set<Amenity>();
     public DbSet<Review> Reviews => Set<Review>();
 
+    // The synchronous overloads are kept for completeness (EF calls them from
+    // synchronous code); the API itself only ever uses the async ones below.
     public override int SaveChanges()
     {
-        RotateTentConcurrencyTokens();
+        RotateTentConcurrencyTokensAsync(useAsync: false, CancellationToken.None).GetAwaiter().GetResult();
         return base.SaveChanges();
     }
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
-        RotateTentConcurrencyTokens();
+        RotateTentConcurrencyTokensAsync(useAsync: false, CancellationToken.None).GetAwaiter().GetResult();
         return base.SaveChanges(acceptAllChangesOnSuccess);
     }
 
-    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    // Fully asynchronous path: loading an untracked tent uses FindAsync, so the
+    // whole chain from the controller down to the database stays async.
+    public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        RotateTentConcurrencyTokens();
-        return base.SaveChangesAsync(cancellationToken);
+        await RotateTentConcurrencyTokensAsync(useAsync: true, cancellationToken);
+        return await base.SaveChangesAsync(cancellationToken);
     }
 
-    public override Task<int> SaveChangesAsync(
+    public override async Task<int> SaveChangesAsync(
         bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
-        RotateTentConcurrencyTokens();
-        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        await RotateTentConcurrencyTokensAsync(useAsync: true, cancellationToken);
+        return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
     }
 
     /// <summary>
@@ -60,7 +64,7 @@ public class DbContext : Microsoft.EntityFrameworkCore.DbContext
     /// <see cref="DbUpdateConcurrencyException"/>. Keeping this here means no
     /// service or repository has to remember to bump the token.
     /// </summary>
-    private void RotateTentConcurrencyTokens()
+    private async Task RotateTentConcurrencyTokensAsync(bool useAsync, CancellationToken cancellationToken)
     {
         ChangeTracker.DetectChanges();
 
@@ -70,8 +74,12 @@ public class DbContext : Microsoft.EntityFrameworkCore.DbContext
         // UPDATE is what makes it the real point of contention: two reservations
         // for the same tent both rewrite its RowVersion, so whichever commits
         // second matches zero rows and loses.
-        foreach (var reservation in ChangeTracker.Entries<Reservation>()
-                     .Where(e => e.State is EntityState.Added or EntityState.Modified))
+        // (Snapshot the list first: loading a tent adds entries to the tracker.)
+        var changedReservations = ChangeTracker.Entries<Reservation>()
+            .Where(e => e.State is EntityState.Added or EntityState.Modified)
+            .ToList();
+
+        foreach (var reservation in changedReservations)
         {
             var tentId = reservation.Entity.TentId;
 
@@ -80,7 +88,10 @@ public class DbContext : Microsoft.EntityFrameworkCore.DbContext
 
             if (tentEntry is null)
             {
-                var tent = Tents.Find(tentId);   // reads the row and tracks it as Unchanged
+                // Reads the row and tracks it as Unchanged.
+                var tent = useAsync
+                    ? await Tents.FindAsync(new object[] { tentId }, cancellationToken)
+                    : Tents.Find(tentId);
                 if (tent is not null)
                 {
                     tentEntry = Entry(tent);

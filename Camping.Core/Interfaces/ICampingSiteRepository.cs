@@ -12,7 +12,11 @@ public interface ICampingSiteRepository
     Task<PagedResult<CampingSite>> GetPagedAsync(
         CampingSiteQueryParameters parameters, CancellationToken cancellationToken);
 
+    /// <summary>The site row only - used before an update or delete.</summary>
     Task<CampingSite?> GetByIdAsync(int id, CancellationToken cancellationToken);
+
+    /// <summary>The site with its amenities (many-to-many, Include) - for reading.</summary>
+    Task<CampingSite?> GetWithAmenitiesAsync(int id, CancellationToken cancellationToken);
 
     /// <summary>Whether another site already uses this name (case-insensitive).</summary>
     Task<bool> NameExistsAsync(string name, int? excludeSiteId, CancellationToken cancellationToken);

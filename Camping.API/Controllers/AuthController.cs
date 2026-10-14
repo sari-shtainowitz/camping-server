@@ -4,7 +4,7 @@ using Camping.Core.DTOs.Requests;
 using Camping.Core.DTOs.Responses;
 using Camping.Core.Entities;
 using Camping.Core.Enums;
-using Camping.Service.Interfaces;
+using Camping.Core.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 

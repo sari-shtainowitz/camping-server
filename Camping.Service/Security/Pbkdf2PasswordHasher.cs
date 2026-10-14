@@ -1,3 +1,4 @@
+using Camping.Core.Interfaces;
 using System.Security.Cryptography;
 
 namespace Camping.Service.Security;

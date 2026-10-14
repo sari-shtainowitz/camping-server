@@ -25,6 +25,16 @@ public class CampingSiteRepository : ICampingSiteRepository
             .FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
     }
 
+    // Read model for the API: the site with its amenities (many-to-many through
+    // the CampingSiteAmenity join table), loaded in the same query with Include.
+    public async Task<CampingSite?> GetWithAmenitiesAsync(int id, CancellationToken cancellationToken)
+    {
+        return await _context.CampingSites
+            .AsNoTracking()
+            .Include(s => s.Amenities)
+            .FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
+    }
+
     public Task<bool> NameExistsAsync(string name, int? excludeSiteId, CancellationToken cancellationToken)
     {
         var lowered = name.ToLower();
@@ -41,7 +51,9 @@ public class CampingSiteRepository : ICampingSiteRepository
     public async Task<PagedResult<CampingSite>> GetPagedAsync(
         CampingSiteQueryParameters parameters, CancellationToken cancellationToken)
     {
-        IQueryable<CampingSite> query = _context.CampingSites.AsNoTracking();
+        IQueryable<CampingSite> query = _context.CampingSites
+            .AsNoTracking()
+            .Include(s => s.Amenities);
 
         if (!string.IsNullOrWhiteSpace(parameters.Name))
         {

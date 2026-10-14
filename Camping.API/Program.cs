@@ -6,10 +6,10 @@ using Camping.API.Middleware;
 using Camping.Core.Interfaces;
 using Camping.Data;
 using Camping.Data.Repositories;
-using Camping.Service.Interfaces;
 using Camping.Service.Security;
 using Camping.Service.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Any;
@@ -60,13 +60,23 @@ builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 
 // --- Authentication (Step 8) ---
+// The signing key is a secret, so it is NOT in appsettings.json (which is in the
+// repo). It comes from User Secrets in development and from the Jwt__Key
+// environment variable elsewhere. So that a fresh clone still runs locally with
+// no setup, Development falls back to a random key generated at start-up
+// (tokens then stop working when the API restarts - fine for local testing).
+// Any other environment refuses to start without a real key.
+var jwtKeyIsMissing = string.IsNullOrWhiteSpace(builder.Configuration["Jwt:Key"]);
+if (jwtKeyIsMissing && builder.Environment.IsDevelopment())
+{
+    builder.Configuration["Jwt:Key"] = Convert.ToBase64String(
+        System.Security.Cryptography.RandomNumberGenerator.GetBytes(48));
+}
+
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
 var jwtSettings = builder.Configuration.GetSection("Jwt").Get<JwtSettings>()
     ?? throw new InvalidOperationException("Missing 'Jwt' configuration section.");
 
-// The signing key is a secret, so it is NOT in appsettings.json (which is in the
-// repo). In development it comes from User Secrets, in production from the
-// Jwt__Key environment variable. Fail fast with instructions if it is missing.
 if (string.IsNullOrWhiteSpace(jwtSettings.Key) || Encoding.UTF8.GetByteCount(jwtSettings.Key) < 32)
 {
     throw new InvalidOperationException(
@@ -101,6 +111,30 @@ builder.Services.AddControllers()
     {
         // .NET 6's System.Text.Json cannot (de)serialize DateOnly on its own.
         options.JsonSerializerOptions.Converters.Add(new DateOnlyJsonConverter());
+    })
+    .ConfigureApiBehaviorOptions(options =>
+    {
+        // ModelState check: [ApiController] validates every DTO against its Data
+        // Annotations before the action runs. When ModelState is invalid this
+        // factory builds the 400 - in the same problem+json shape (with the
+        // correlation id) that ExceptionHandlingMiddleware uses for every other
+        // error, plus an "errors" map of field -> messages.
+        options.InvalidModelStateResponseFactory = context =>
+        {
+            var problem = new ValidationProblemDetails(context.ModelState)
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "Bad Request",
+                Detail = "One or more validation errors occurred.",
+                Instance = context.HttpContext.Request.Path
+            };
+            problem.Extensions["correlationId"] = CorrelationIdMiddleware.GetCorrelationId(context.HttpContext);
+
+            return new BadRequestObjectResult(problem)
+            {
+                ContentTypes = { "application/problem+json" }
+            };
+        };
     });
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
@@ -142,6 +176,13 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 var app = builder.Build();
+
+if (jwtKeyIsMissing)
+{
+    app.Logger.LogWarning(
+        "Jwt:Key is not configured - using a temporary random signing key for this run. " +
+        "Set a permanent one with: dotnet user-secrets set \"Jwt:Key\" \"<32+ random characters>\" --project Camping.API");
+}
 
 // --- Database: apply pending migrations on startup -----------------------------
 // So the system runs locally with no manual database step: an empty PostgreSQL

@@ -7,7 +7,7 @@ using Camping.API.Mapping;
 using Camping.Core.Entities;
 using Camping.Core.Enums;
 using Camping.Core.Querying;
-using Camping.Service.Interfaces;
+using Camping.Core.Interfaces;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;

@@ -1,4 +1,4 @@
-namespace Camping.Service.Security;
+namespace Camping.Core.Interfaces;
 
 /// <summary>
 /// Hashes and verifies user passwords. Kept as an abstraction so the service

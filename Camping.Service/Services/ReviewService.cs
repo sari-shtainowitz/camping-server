@@ -2,7 +2,6 @@ using Camping.Core.Entities;
 using Camping.Core.Interfaces;
 using Camping.Core.Querying;
 using Camping.Service.Exceptions;
-using Camping.Service.Interfaces;
 using Microsoft.Extensions.Logging;
 
 namespace Camping.Service.Services;

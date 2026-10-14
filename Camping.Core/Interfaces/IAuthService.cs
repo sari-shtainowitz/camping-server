@@ -1,6 +1,6 @@
 using Camping.Core.Entities;
 
-namespace Camping.Service.Interfaces;
+namespace Camping.Core.Interfaces;
 
 /// <summary>
 /// Registration and login.

@@ -44,9 +44,10 @@ both change it, the first save wins and the second gets
 
 ```
 ├── Camping.sln
-├── Camping.Core/      entities, enums, interfaces, DTOs, query/paging types - references nothing
-├── Camping.Data/      EF Core DbContext, migrations, repositories          -> Core
-├── Camping.Service/   business rules (services), password hashing           -> Core
+├── Camping.Core/      entities, enums, ALL interfaces (repositories, services,
+│                      password hasher), DTOs, query/paging types           - references nothing
+├── Camping.Data/      EF Core DbContext, migrations, repository implementations -> Core
+├── Camping.Service/   service implementations (business rules), PBKDF2 hasher   -> Core
 ├── Camping.API/       controllers, AutoMapper, JWT, middleware, NLog         -> Service, Core (+ Data for DI only)
 ├── Camping.Tests/     xUnit + Moq unit tests, PostgreSQL integration tests
 └── (Client/)          the React client - a separate repository, git-ignored here
@@ -73,8 +74,10 @@ dotnet user-secrets set "ConnectionStrings:CampingDb" "Host=localhost;Port=5432;
 dotnet user-secrets set "Jwt:Key" "<any random string of 32+ characters>" --project Camping.API
 ```
 
-The API refuses to start, with these exact instructions, if either is missing.
-In any other environment use the environment variables
+Without the connection string the API refuses to start and prints this exact
+command. Without `Jwt:Key`, Development still starts with a temporary random
+key (a Warning is logged; tokens stop working after a restart); every other
+environment refuses to start. Outside development use the environment variables
 `ConnectionStrings__CampingDb` and `Jwt__Key`.
 
 ### 3. Start the API
@@ -119,18 +122,57 @@ Register in the client to get more Customers.
 |----------|-----------|-----|
 | Auth | `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me` | anyone / signed in |
 | Tents | `GET /api/tents` (paged, filter: type, minCapacity, price range, isActive; sort), `GET /api/tents/{id}`, `POST`, `PUT`, `DELETE` | read: signed in, write: Admin |
-| Camping sites, Amenities | same CRUD shape (`/api/camping-sites`, `/api/amenities`) | read: signed in, write: Admin |
+| Camping sites, Amenities | same CRUD shape (`/api/camping-sites`, `/api/amenities`); a camping site is returned with its amenities (many-to-many) | read: signed in, write: Admin |
 | Reservations | `GET /api/reservations` (paged), `GET /{id}`, `POST`, `PUT /{id}`, `DELETE /{id}` | Customer books; owners or Admin read/change |
 | Users | `GET /api/users`, `GET /{id}`, `PUT /{id}`, `DELETE /{id}` | Admin |
 | Reviews | `GET /api/reviews` (public), `POST` (signed in), `DELETE /{id}` (Admin) | |
 
 Status codes: `200`, `201` + `Location`, `204`, `400` (validation / business
-rule), `401`, `403`, `404`, `409` (tent conflict). Every error is an
-`application/problem+json` body with the request's `correlationId`.
+rule), `401`, `403`, `404`, `409` (tent conflict). Every error has the same
+problem-JSON shape (`title`, `status`, `detail`, `instance`) with the request's `correlationId`.
 
 Authorization is enforced **on the server**: a Customer always books as the user
 in their JWT (a `userId` in the body is ignored), only sees their own
 reservations, and gets `403` on anyone else's.
+
+**Validation, two levels:**
+* *Shape* - Data Annotations on the request DTOs (`[Required]`, `[Range]`,
+  `[StringLength]`...). `[ApiController]` checks `ModelState` before the action
+  runs; an invalid model gets a `400` built by `InvalidModelStateResponseFactory`
+  (`Program.cs`) in the same problem+json shape, with an `errors` map per field.
+* *Business rules* that depend on the data (dates, tent active, tent free,
+  unique email/name) live in the services, never in the controllers.
+
+---
+
+## Data access (EF Core)
+
+* Code-First, a `DbSet` per entity, Fluent API configuration in `DbContext`.
+* Relationships: one-to-many (camping site -> tents, tent -> reservations,
+  user -> reservations/reviews) and many-to-many (camping site <-> amenities).
+* `Include` / `ThenInclude` load related data in the same query - a reservation
+  comes with its tent, the tent's camping site and the guest; a camping site
+  with its amenities. No per-row follow-up queries (no N+1).
+* Paging is `Skip`/`Take` inside the SQL query; filters and sorting are LINQ
+  translated to SQL; every read-only query uses `AsNoTracking`.
+* Fully async from controller to database, with the request's
+  `CancellationToken` passed through every layer.
+
+## Dependency injection lifetimes
+
+Registered in `Program.cs`, all through constructor injection:
+
+| Lifetime | What | Why |
+|----------|------|-----|
+| Scoped | `DbContext`, repositories, services | one instance per HTTP request; a `DbContext` tracks entities for one unit of work and is not thread-safe |
+| Singleton | `Pbkdf2PasswordHasher`, `JwtTokenService` | stateless, safe to share |
+
+A **singleton that holds a scoped service is a bug** ("captive dependency"):
+the singleton lives for the whole app, so the scoped object it captured (e.g. a
+`DbContext`) would be shared by every request at once - stale tracked data,
+concurrent use of a non-thread-safe context, and a connection that is never
+released. That is why nothing registered as a singleton depends on a repository
+or the `DbContext`.
 
 ---
 
