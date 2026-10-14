@@ -6,6 +6,10 @@ lakeside camping site, check availability for their dates, pay with a mock card
 and get a booking confirmation; admins manage the tent catalogue and see the
 reservation schedule. Guests can also leave public reviews.
 
+**The React client lives in its own repository:**
+[sari-shtainowitz/camping-client](https://github.com/sari-shtainowitz/camping-client)
+(clone it next to this one, or into a `Client/` folder here - that folder is git-ignored).
+
 ---
 
 ## The limited resource: a tent
@@ -45,7 +49,7 @@ both change it, the first save wins and the second gets
 ├── Camping.Service/   business rules (services), password hashing           -> Core
 ├── Camping.API/       controllers, AutoMapper, JWT, middleware, NLog         -> Service, Core (+ Data for DI only)
 ├── Camping.Tests/     xUnit + Moq unit tests, PostgreSQL integration tests
-└── Client/            React + TypeScript client (Vite) - not part of the solution
+└── (Client/)          the React client - a separate repository, git-ignored here
 ```
 
 ---
@@ -172,7 +176,7 @@ or from the `CAMPING_TEST_DB` environment variable.
 
 ---
 
-## Client (`Client/`)
+## Client ([camping-client](https://github.com/sari-shtainowitz/camping-client))
 
 Only a demonstration of the server:
 
