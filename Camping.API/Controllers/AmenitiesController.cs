@@ -1,6 +1,6 @@
 using AutoMapper;
-using Camping.API.DTOs.Requests;
-using Camping.API.DTOs.Responses;
+using Camping.Core.DTOs.Requests;
+using Camping.Core.DTOs.Responses;
 using Camping.Core.Entities;
 using Camping.Core.Enums;
 using Camping.Core.Querying;
@@ -36,9 +36,9 @@ public class AmenitiesController : ControllerBase
     [HttpGet]
     [ProducesResponseType(typeof(PagedResult<AmenityResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<PagedResult<AmenityResponse>>> GetAll(
-        [FromQuery] AmenityQueryParameters parameters)
+        [FromQuery] AmenityQueryParameters parameters, CancellationToken cancellationToken)
     {
-        var page = await _service.GetPagedAsync(parameters);
+        var page = await _service.GetPagedAsync(parameters, cancellationToken);
         return Ok(_mapper.Map<PagedResult<AmenityResponse>>(page));
     }
 
@@ -46,9 +46,9 @@ public class AmenitiesController : ControllerBase
     [HttpGet("{id:int}")]
     [ProducesResponseType(typeof(AmenityResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<AmenityResponse>> GetById([FromRoute] int id)
+    public async Task<ActionResult<AmenityResponse>> GetById([FromRoute] int id, CancellationToken cancellationToken)
     {
-        var amenity = await _service.GetByIdAsync(id);
+        var amenity = await _service.GetByIdAsync(id, cancellationToken);
         return Ok(_mapper.Map<AmenityResponse>(amenity));
     }
 
@@ -58,9 +58,10 @@ public class AmenitiesController : ControllerBase
     [ProducesResponseType(typeof(AmenityResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<ActionResult<AmenityResponse>> Create([FromBody] AmenityRequest request)
+    public async Task<ActionResult<AmenityResponse>> Create(
+        [FromBody] AmenityRequest request, CancellationToken cancellationToken)
     {
-        var created = await _service.CreateAsync(_mapper.Map<Amenity>(request));
+        var created = await _service.CreateAsync(_mapper.Map<Amenity>(request), cancellationToken);
         var response = _mapper.Map<AmenityResponse>(created);
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, response);
     }
@@ -72,9 +73,10 @@ public class AmenitiesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<AmenityResponse>> Update([FromRoute] int id, [FromBody] AmenityRequest request)
+    public async Task<ActionResult<AmenityResponse>> Update(
+        [FromRoute] int id, [FromBody] AmenityRequest request, CancellationToken cancellationToken)
     {
-        var updated = await _service.UpdateAsync(id, _mapper.Map<Amenity>(request));
+        var updated = await _service.UpdateAsync(id, _mapper.Map<Amenity>(request), cancellationToken);
         return Ok(_mapper.Map<AmenityResponse>(updated));
     }
 
@@ -85,9 +87,9 @@ public class AmenitiesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Delete([FromRoute] int id)
+    public async Task<IActionResult> Delete([FromRoute] int id, CancellationToken cancellationToken)
     {
-        await _service.DeleteAsync(id);
+        await _service.DeleteAsync(id, cancellationToken);
         return NoContent();
     }
 }

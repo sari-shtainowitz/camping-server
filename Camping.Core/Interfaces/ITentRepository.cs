@@ -8,16 +8,18 @@ namespace Camping.Core.Interfaces;
 /// </summary>
 public interface ITentRepository
 {
-    Task<List<Tent>> GetAllAsync();
-
     /// <summary>Database-side paged/filtered/sorted query.</summary>
-    Task<PagedResult<Tent>> GetPagedAsync(TentQueryParameters parameters);
+    Task<PagedResult<Tent>> GetPagedAsync(TentQueryParameters parameters, CancellationToken cancellationToken);
 
-    Task<Tent?> GetByIdAsync(int id);
+    Task<Tent?> GetByIdAsync(int id, CancellationToken cancellationToken);
 
-    Task AddAsync(Tent tent);
+    /// <summary>Whether another tent on the same site already uses this label (case-insensitive).</summary>
+    Task<bool> LabelExistsAsync(
+        int campingSiteId, string label, int? excludeTentId, CancellationToken cancellationToken);
 
-    Task UpdateAsync(Tent tent);
+    Task AddAsync(Tent tent, CancellationToken cancellationToken);
 
-    Task DeleteAsync(int id);
+    Task UpdateAsync(Tent tent, CancellationToken cancellationToken);
+
+    Task DeleteAsync(int id, CancellationToken cancellationToken);
 }

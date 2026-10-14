@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using AutoMapper;
-using Camping.API.DTOs.Requests;
-using Camping.API.DTOs.Responses;
+using Camping.Core.DTOs.Requests;
+using Camping.Core.DTOs.Responses;
 using Camping.Core.Entities;
 using Camping.Core.Enums;
 using Camping.Core.Querying;
@@ -15,11 +15,12 @@ namespace Camping.API.Controllers;
 /// Reservations. All endpoints require an authenticated user; the booking rules
 /// (availability, pricing, date checks) live in <see cref="IReservationService"/>.
 /// Service-layer exceptions are translated to HTTP results centrally by the
-/// exception-handling middleware (Step 12) - including the
-/// <c>ConcurrencyConflictException</c> that a lost booking race produces (409).
+/// exception-handling middleware (Step 12) - including the 409 Conflict for a
+/// tent that is already booked or was taken by a racing request.
 ///
-/// Ownership: a Customer may only read, update or delete their own reservations;
-/// an Admin may act on any reservation (matches the documented role model).
+/// Ownership is enforced here, on the server, from the JWT: a Customer always
+/// books for themselves (any userId in the body is ignored) and may only read,
+/// update or delete their own reservations; an Admin may act on any reservation.
 /// </summary>
 [ApiController]
 [Route("api/reservations")]
@@ -45,14 +46,14 @@ public class ReservationsController : ControllerBase
     [HttpGet]
     [ProducesResponseType(typeof(PagedResult<ReservationResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<PagedResult<ReservationResponse>>> GetAll(
-        [FromQuery] ReservationQueryParameters parameters)
+        [FromQuery] ReservationQueryParameters parameters, CancellationToken cancellationToken)
     {
         if (!IsAdmin())
         {
             parameters.UserId = CurrentUserId();
         }
 
-        var page = await _service.GetPagedAsync(parameters);
+        var page = await _service.GetPagedAsync(parameters, cancellationToken);
         return Ok(_mapper.Map<PagedResult<ReservationResponse>>(page));
     }
 
@@ -61,9 +62,10 @@ public class ReservationsController : ControllerBase
     [ProducesResponseType(typeof(ReservationResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<ReservationResponse>> GetById([FromRoute] int id)
+    public async Task<ActionResult<ReservationResponse>> GetById(
+        [FromRoute] int id, CancellationToken cancellationToken)
     {
-        var reservation = await _service.GetByIdAsync(id);
+        var reservation = await _service.GetByIdAsync(id, cancellationToken);
         if (!IsAdmin() && reservation.UserId != CurrentUserId())
         {
             return Forbid();
@@ -73,8 +75,9 @@ public class ReservationsController : ControllerBase
     }
 
     /// <summary>
-    /// Creates a reservation. Booking is a Customer action; Admins manage the
-    /// catalogue and view the schedule but never book a tent.
+    /// Creates a reservation for the caller. Booking is a Customer action; Admins
+    /// manage the catalogue and view the schedule but never book a tent.
+    /// The guest is always the authenticated caller - a userId in the body is ignored.
     /// </summary>
     [HttpPost]
     [Authorize(Roles = nameof(UserRole.Customer))]
@@ -82,29 +85,42 @@ public class ReservationsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
-    public async Task<ActionResult<ReservationResponse>> Create([FromBody] ReservationRequest request)
+    public async Task<ActionResult<ReservationResponse>> Create(
+        [FromBody] ReservationRequest request, CancellationToken cancellationToken)
     {
-        var created = await _service.CreateAsync(_mapper.Map<Reservation>(request));
+        var reservation = _mapper.Map<Reservation>(request);
+        reservation.UserId = CurrentUserId();
+
+        var created = await _service.CreateAsync(reservation, cancellationToken);
         var response = _mapper.Map<ReservationResponse>(created);
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, response);
     }
 
-    /// <summary>Updates a reservation. A Customer may only update their own.</summary>
+    /// <summary>
+    /// Updates a reservation. A Customer may only update their own and can never
+    /// move it to another user; an Admin may also reassign it via <c>userId</c>.
+    /// </summary>
     [HttpPut("{id:int}")]
     [ProducesResponseType(typeof(ReservationResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
-    public async Task<ActionResult<ReservationResponse>> Update([FromRoute] int id, [FromBody] ReservationRequest request)
+    public async Task<ActionResult<ReservationResponse>> Update(
+        [FromRoute] int id, [FromBody] ReservationRequest request, CancellationToken cancellationToken)
     {
-        var existing = await _service.GetByIdAsync(id);
+        var existing = await _service.GetByIdAsync(id, cancellationToken);
         if (!IsAdmin() && existing.UserId != CurrentUserId())
         {
             return Forbid();
         }
 
-        var updated = await _service.UpdateAsync(id, _mapper.Map<Reservation>(request));
+        var reservation = _mapper.Map<Reservation>(request);
+        reservation.UserId = IsAdmin()
+            ? request.UserId ?? existing.UserId
+            : existing.UserId;
+
+        var updated = await _service.UpdateAsync(id, reservation, cancellationToken);
         return Ok(_mapper.Map<ReservationResponse>(updated));
     }
 
@@ -113,15 +129,15 @@ public class ReservationsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Delete([FromRoute] int id)
+    public async Task<IActionResult> Delete([FromRoute] int id, CancellationToken cancellationToken)
     {
-        var existing = await _service.GetByIdAsync(id);
+        var existing = await _service.GetByIdAsync(id, cancellationToken);
         if (!IsAdmin() && existing.UserId != CurrentUserId())
         {
             return Forbid();
         }
 
-        await _service.DeleteAsync(id);
+        await _service.DeleteAsync(id, cancellationToken);
         return NoContent();
     }
 

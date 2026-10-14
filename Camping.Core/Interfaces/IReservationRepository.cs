@@ -1,40 +1,47 @@
 using Camping.Core.Entities;
-using Camping.Core.Exceptions;
 using Camping.Core.Querying;
 
 namespace Camping.Core.Interfaces;
 
 /// <summary>
-/// Basic data access operations for <see cref="Reservation"/> entities.
+/// Data access for <see cref="Reservation"/> entities, including the
+/// transactional writes that guard the limited resource (the tent).
 /// </summary>
 public interface IReservationRepository
 {
-    Task<List<Reservation>> GetAllAsync();
+    /// <summary>
+    /// Database-side paged/filtered/sorted query. Each reservation comes with its
+    /// tent, the tent's camping site and the guest (Include / ThenInclude).
+    /// </summary>
+    Task<PagedResult<Reservation>> GetPagedAsync(
+        ReservationQueryParameters parameters, CancellationToken cancellationToken);
 
-    /// <summary>Database-side paged/filtered/sorted query.</summary>
-    Task<PagedResult<Reservation>> GetPagedAsync(ReservationQueryParameters parameters);
-
-    Task<Reservation?> GetByIdAsync(int id);
-
-    Task AddAsync(Reservation reservation);
-
-    Task UpdateAsync(Reservation reservation);
-
-    Task DeleteAsync(int id);
+    /// <summary>A single reservation with its tent, camping site and guest.</summary>
+    Task<Reservation?> GetByIdAsync(int id, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Inserts a reservation inside a database transaction that also rotates the
-    /// target tent's concurrency token (Step 11). <paramref name="ensureTentIsAvailable"/>
-    /// runs inside that transaction and must throw if the tent is not free, so
-    /// the availability check and the write share one consistent snapshot.
-    /// Throws <see cref="ConcurrencyConflictException"/> when another transaction
-    /// booked the same tent first.
+    /// Whether a non-cancelled reservation for this tent overlaps [startDate, endDate).
+    /// Runs as one EXISTS query in the database.
     /// </summary>
-    Task AddTransactionalAsync(Reservation reservation, Func<Task> ensureTentIsAvailable);
+    Task<bool> HasOverlapAsync(
+        int tentId, DateOnly startDate, DateOnly endDate, int? excludeReservationId,
+        CancellationToken cancellationToken);
+
+    Task<bool> ExistsForTentAsync(int tentId, CancellationToken cancellationToken);
+
+    Task<bool> ExistsForUserAsync(int userId, CancellationToken cancellationToken);
+
+    Task DeleteAsync(int id, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Transactional, concurrency-guarded counterpart of <see cref="UpdateAsync"/>.
-    /// Same protection as <see cref="AddTransactionalAsync"/>.
+    /// Adds the reservation inside a transaction that first runs
+    /// <paramref name="ensureTentIsAvailable"/> and rotates the tent's
+    /// concurrency token, so a racing booking for the same tent fails.
     /// </summary>
-    Task UpdateTransactionalAsync(Reservation reservation, Func<Task> ensureTentIsAvailable);
+    Task AddTransactionalAsync(
+        Reservation reservation, Func<Task> ensureTentIsAvailable, CancellationToken cancellationToken);
+
+    /// <summary>Same guard as <see cref="AddTransactionalAsync"/>, for an update.</summary>
+    Task UpdateTransactionalAsync(
+        Reservation reservation, Func<Task> ensureTentIsAvailable, CancellationToken cancellationToken);
 }

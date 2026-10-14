@@ -1,6 +1,6 @@
 using AutoMapper;
-using Camping.API.DTOs.Requests;
-using Camping.API.DTOs.Responses;
+using Camping.Core.DTOs.Requests;
+using Camping.Core.DTOs.Responses;
 using Camping.Core.Entities;
 using Camping.Core.Enums;
 using Camping.Core.Querying;
@@ -36,9 +36,9 @@ public class TentsController : ControllerBase
     [HttpGet]
     [ProducesResponseType(typeof(PagedResult<TentResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<PagedResult<TentResponse>>> GetAll(
-        [FromQuery] TentQueryParameters parameters)
+        [FromQuery] TentQueryParameters parameters, CancellationToken cancellationToken)
     {
-        var page = await _service.GetPagedAsync(parameters);
+        var page = await _service.GetPagedAsync(parameters, cancellationToken);
         return Ok(_mapper.Map<PagedResult<TentResponse>>(page));
     }
 
@@ -46,9 +46,9 @@ public class TentsController : ControllerBase
     [HttpGet("{id:int}")]
     [ProducesResponseType(typeof(TentResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<TentResponse>> GetById([FromRoute] int id)
+    public async Task<ActionResult<TentResponse>> GetById([FromRoute] int id, CancellationToken cancellationToken)
     {
-        var tent = await _service.GetByIdAsync(id);
+        var tent = await _service.GetByIdAsync(id, cancellationToken);
         return Ok(_mapper.Map<TentResponse>(tent));
     }
 
@@ -58,9 +58,10 @@ public class TentsController : ControllerBase
     [ProducesResponseType(typeof(TentResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<ActionResult<TentResponse>> Create([FromBody] TentRequest request)
+    public async Task<ActionResult<TentResponse>> Create(
+        [FromBody] TentRequest request, CancellationToken cancellationToken)
     {
-        var created = await _service.CreateAsync(_mapper.Map<Tent>(request));
+        var created = await _service.CreateAsync(_mapper.Map<Tent>(request), cancellationToken);
         var response = _mapper.Map<TentResponse>(created);
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, response);
     }
@@ -72,9 +73,10 @@ public class TentsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<TentResponse>> Update([FromRoute] int id, [FromBody] TentRequest request)
+    public async Task<ActionResult<TentResponse>> Update(
+        [FromRoute] int id, [FromBody] TentRequest request, CancellationToken cancellationToken)
     {
-        var updated = await _service.UpdateAsync(id, _mapper.Map<Tent>(request));
+        var updated = await _service.UpdateAsync(id, _mapper.Map<Tent>(request), cancellationToken);
         return Ok(_mapper.Map<TentResponse>(updated));
     }
 
@@ -85,9 +87,9 @@ public class TentsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Delete([FromRoute] int id)
+    public async Task<IActionResult> Delete([FromRoute] int id, CancellationToken cancellationToken)
     {
-        await _service.DeleteAsync(id);
+        await _service.DeleteAsync(id, cancellationToken);
         return NoContent();
     }
 }

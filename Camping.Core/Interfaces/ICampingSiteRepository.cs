@@ -8,23 +8,21 @@ namespace Camping.Core.Interfaces;
 /// </summary>
 public interface ICampingSiteRepository
 {
-    Task<List<CampingSite>> GetAllAsync();
-
     /// <summary>Database-side paged/filtered/sorted query.</summary>
-    Task<PagedResult<CampingSite>> GetPagedAsync(CampingSiteQueryParameters parameters);
+    Task<PagedResult<CampingSite>> GetPagedAsync(
+        CampingSiteQueryParameters parameters, CancellationToken cancellationToken);
 
-    Task<CampingSite?> GetByIdAsync(int id);
+    Task<CampingSite?> GetByIdAsync(int id, CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Loads a camping site together with its tents (eager-loaded via the
-    /// Fluent API-configured one-to-many), so the delete guard can check for
-    /// dependent tents without a separate full-table query.
-    /// </summary>
-    Task<CampingSite?> GetByIdWithTentsAsync(int id);
+    /// <summary>Whether another site already uses this name (case-insensitive).</summary>
+    Task<bool> NameExistsAsync(string name, int? excludeSiteId, CancellationToken cancellationToken);
 
-    Task AddAsync(CampingSite campingSite);
+    /// <summary>Whether the site still owns at least one tent.</summary>
+    Task<bool> HasTentsAsync(int id, CancellationToken cancellationToken);
 
-    Task UpdateAsync(CampingSite campingSite);
+    Task AddAsync(CampingSite campingSite, CancellationToken cancellationToken);
 
-    Task DeleteAsync(int id);
+    Task UpdateAsync(CampingSite campingSite, CancellationToken cancellationToken);
+
+    Task DeleteAsync(int id, CancellationToken cancellationToken);
 }

@@ -19,19 +19,15 @@ public class AmenityService : IAmenityService
         _amenities = amenities;
     }
 
-    public async Task<IReadOnlyList<Amenity>> GetAllAsync()
+    public Task<PagedResult<Amenity>> GetPagedAsync(
+        AmenityQueryParameters parameters, CancellationToken cancellationToken)
     {
-        return await _amenities.GetAllAsync();
+        return _amenities.GetPagedAsync(parameters, cancellationToken);
     }
 
-    public Task<PagedResult<Amenity>> GetPagedAsync(AmenityQueryParameters parameters)
+    public async Task<Amenity> GetByIdAsync(int id, CancellationToken cancellationToken)
     {
-        return _amenities.GetPagedAsync(parameters);
-    }
-
-    public async Task<Amenity> GetByIdAsync(int id)
-    {
-        var amenity = await _amenities.GetByIdAsync(id);
+        var amenity = await _amenities.GetByIdAsync(id, cancellationToken);
         if (amenity is null)
         {
             throw new NotFoundException($"Amenity {id} was not found.");
@@ -40,12 +36,12 @@ public class AmenityService : IAmenityService
         return amenity;
     }
 
-    public async Task<Amenity> CreateAsync(Amenity amenity)
+    public async Task<Amenity> CreateAsync(Amenity amenity, CancellationToken cancellationToken)
     {
         var name = (amenity.Name ?? string.Empty).Trim();
 
         Validate(name);
-        await EnsureNameIsUniqueAsync(name, excludeAmenityId: null);
+        await EnsureNameIsUniqueAsync(name, excludeAmenityId: null, cancellationToken);
 
         amenity.Id = 0;
         amenity.Name = name;
@@ -54,32 +50,32 @@ public class AmenityService : IAmenityService
             : amenity.Description.Trim();
         amenity.CampingSites = new List<CampingSite>();
 
-        await _amenities.AddAsync(amenity);
+        await _amenities.AddAsync(amenity, cancellationToken);
         return amenity;
     }
 
-    public async Task<Amenity> UpdateAsync(int id, Amenity amenity)
+    public async Task<Amenity> UpdateAsync(int id, Amenity amenity, CancellationToken cancellationToken)
     {
-        var existing = await GetByIdAsync(id);
+        var existing = await GetByIdAsync(id, cancellationToken);
 
         var name = (amenity.Name ?? string.Empty).Trim();
 
         Validate(name);
-        await EnsureNameIsUniqueAsync(name, excludeAmenityId: id);
+        await EnsureNameIsUniqueAsync(name, excludeAmenityId: id, cancellationToken);
 
         existing.Name = name;
         existing.Description = string.IsNullOrWhiteSpace(amenity.Description)
             ? null
             : amenity.Description.Trim();
 
-        await _amenities.UpdateAsync(existing);
+        await _amenities.UpdateAsync(existing, cancellationToken);
         return existing;
     }
 
-    public async Task DeleteAsync(int id)
+    public async Task DeleteAsync(int id, CancellationToken cancellationToken)
     {
-        await GetByIdAsync(id);
-        await _amenities.DeleteAsync(id);
+        await GetByIdAsync(id, cancellationToken);
+        await _amenities.DeleteAsync(id, cancellationToken);
     }
 
     private static void Validate(string name)
@@ -90,14 +86,9 @@ public class AmenityService : IAmenityService
         }
     }
 
-    private async Task EnsureNameIsUniqueAsync(string name, int? excludeAmenityId)
+    private async Task EnsureNameIsUniqueAsync(string name, int? excludeAmenityId, CancellationToken cancellationToken)
     {
-        var all = await _amenities.GetAllAsync();
-        var taken = all.Any(a =>
-            a.Id != excludeAmenityId &&
-            string.Equals(a.Name, name, StringComparison.OrdinalIgnoreCase));
-
-        if (taken)
+        if (await _amenities.NameExistsAsync(name, excludeAmenityId, cancellationToken))
         {
             throw new BusinessRuleException($"An amenity named '{name}' already exists.");
         }

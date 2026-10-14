@@ -29,19 +29,14 @@ public class TentService : ITentService
         _reservations = reservations;
     }
 
-    public async Task<IReadOnlyList<Tent>> GetAllAsync()
+    public Task<PagedResult<Tent>> GetPagedAsync(TentQueryParameters parameters, CancellationToken cancellationToken)
     {
-        return await _tents.GetAllAsync();
+        return _tents.GetPagedAsync(parameters, cancellationToken);
     }
 
-    public Task<PagedResult<Tent>> GetPagedAsync(TentQueryParameters parameters)
+    public async Task<Tent> GetByIdAsync(int id, CancellationToken cancellationToken)
     {
-        return _tents.GetPagedAsync(parameters);
-    }
-
-    public async Task<Tent> GetByIdAsync(int id)
-    {
-        var tent = await _tents.GetByIdAsync(id);
+        var tent = await _tents.GetByIdAsync(id, cancellationToken);
         if (tent is null)
         {
             throw new NotFoundException($"Tent {id} was not found.");
@@ -50,13 +45,13 @@ public class TentService : ITentService
         return tent;
     }
 
-    public async Task<Tent> CreateAsync(Tent tent)
+    public async Task<Tent> CreateAsync(Tent tent, CancellationToken cancellationToken)
     {
         var label = (tent.Label ?? string.Empty).Trim();
 
-        await EnsureSiteExistsAsync(tent.CampingSiteId);
+        await EnsureSiteExistsAsync(tent.CampingSiteId, cancellationToken);
         Validate(label, tent.Capacity, tent.PricePerNight);
-        await EnsureLabelIsUniqueAsync(tent.CampingSiteId, label, excludeTentId: null);
+        await EnsureLabelIsUniqueAsync(tent.CampingSiteId, label, excludeTentId: null, cancellationToken);
 
         tent.Id = 0;
         tent.Label = label;
@@ -64,19 +59,19 @@ public class TentService : ITentService
         tent.CampingSite = null!;
         tent.Reservations = new List<Reservation>();
 
-        await _tents.AddAsync(tent);
+        await _tents.AddAsync(tent, cancellationToken);
         return tent;
     }
 
-    public async Task<Tent> UpdateAsync(int id, Tent tent)
+    public async Task<Tent> UpdateAsync(int id, Tent tent, CancellationToken cancellationToken)
     {
-        var existing = await GetByIdAsync(id);
+        var existing = await GetByIdAsync(id, cancellationToken);
 
         var label = (tent.Label ?? string.Empty).Trim();
 
-        await EnsureSiteExistsAsync(tent.CampingSiteId);
+        await EnsureSiteExistsAsync(tent.CampingSiteId, cancellationToken);
         Validate(label, tent.Capacity, tent.PricePerNight);
-        await EnsureLabelIsUniqueAsync(tent.CampingSiteId, label, excludeTentId: id);
+        await EnsureLabelIsUniqueAsync(tent.CampingSiteId, label, excludeTentId: id, cancellationToken);
 
         existing.CampingSiteId = tent.CampingSiteId;
         existing.Label = label;
@@ -85,26 +80,25 @@ public class TentService : ITentService
         existing.PricePerNight = tent.PricePerNight;
         existing.IsActive = tent.IsActive;
 
-        await _tents.UpdateAsync(existing);
+        await _tents.UpdateAsync(existing, cancellationToken);
         return existing;
     }
 
-    public async Task DeleteAsync(int id)
+    public async Task DeleteAsync(int id, CancellationToken cancellationToken)
     {
-        await GetByIdAsync(id);
+        await GetByIdAsync(id, cancellationToken);
 
-        var reservations = await _reservations.GetAllAsync();
-        if (reservations.Any(r => r.TentId == id))
+        if (await _reservations.ExistsForTentAsync(id, cancellationToken))
         {
             throw new BusinessRuleException("Cannot delete a tent that still has reservations.");
         }
 
-        await _tents.DeleteAsync(id);
+        await _tents.DeleteAsync(id, cancellationToken);
     }
 
-    private async Task EnsureSiteExistsAsync(int campingSiteId)
+    private async Task EnsureSiteExistsAsync(int campingSiteId, CancellationToken cancellationToken)
     {
-        var site = await _sites.GetByIdAsync(campingSiteId);
+        var site = await _sites.GetByIdAsync(campingSiteId, cancellationToken);
         if (site is null)
         {
             throw new BusinessRuleException($"Camping site {campingSiteId} does not exist.");
@@ -129,15 +123,10 @@ public class TentService : ITentService
         }
     }
 
-    private async Task EnsureLabelIsUniqueAsync(int campingSiteId, string label, int? excludeTentId)
+    private async Task EnsureLabelIsUniqueAsync(
+        int campingSiteId, string label, int? excludeTentId, CancellationToken cancellationToken)
     {
-        var all = await _tents.GetAllAsync();
-        var taken = all.Any(t =>
-            t.Id != excludeTentId &&
-            t.CampingSiteId == campingSiteId &&
-            string.Equals(t.Label, label, StringComparison.OrdinalIgnoreCase));
-
-        if (taken)
+        if (await _tents.LabelExistsAsync(campingSiteId, label, excludeTentId, cancellationToken))
         {
             throw new BusinessRuleException(
                 $"A tent labelled '{label}' already exists on camping site {campingSiteId}.");

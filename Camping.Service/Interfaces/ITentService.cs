@@ -8,16 +8,14 @@ namespace Camping.Service.Interfaces;
 /// </summary>
 public interface ITentService
 {
-    Task<IReadOnlyList<Tent>> GetAllAsync();
-
     /// <summary>Paged/filtered/sorted list, evaluated in the database.</summary>
-    Task<PagedResult<Tent>> GetPagedAsync(TentQueryParameters parameters);
+    Task<PagedResult<Tent>> GetPagedAsync(TentQueryParameters parameters, CancellationToken cancellationToken);
 
-    Task<Tent> GetByIdAsync(int id);
+    Task<Tent> GetByIdAsync(int id, CancellationToken cancellationToken);
 
-    Task<Tent> CreateAsync(Tent tent);
+    Task<Tent> CreateAsync(Tent tent, CancellationToken cancellationToken);
 
-    Task<Tent> UpdateAsync(int id, Tent tent);
+    Task<Tent> UpdateAsync(int id, Tent tent, CancellationToken cancellationToken);
 
-    Task DeleteAsync(int id);
+    Task DeleteAsync(int id, CancellationToken cancellationToken);
 }

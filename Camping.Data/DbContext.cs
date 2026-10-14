@@ -23,6 +23,7 @@ public class DbContext : Microsoft.EntityFrameworkCore.DbContext
     public DbSet<Tent> Tents => Set<Tent>();
     public DbSet<Reservation> Reservations => Set<Reservation>();
     public DbSet<Amenity> Amenities => Set<Amenity>();
+    public DbSet<Review> Reviews => Set<Review>();
 
     public override int SaveChanges()
     {
@@ -109,6 +110,7 @@ public class DbContext : Microsoft.EntityFrameworkCore.DbContext
         ConfigureTent(modelBuilder.Entity<Tent>());
         ConfigureReservation(modelBuilder.Entity<Reservation>());
         ConfigureAmenity(modelBuilder.Entity<Amenity>());
+        ConfigureReview(modelBuilder.Entity<Review>());
 
         Seed(modelBuilder);
     }
@@ -294,5 +296,24 @@ public class DbContext : Microsoft.EntityFrameworkCore.DbContext
         amenity.Property(a => a.Description).HasMaxLength(500);
 
         amenity.HasIndex(a => a.Name).IsUnique();
+    }
+
+    private static void ConfigureReview(EntityTypeBuilder<Review> review)
+    {
+        review.HasKey(r => r.Id);
+
+        review.Property(r => r.Text).IsRequired().HasMaxLength(1000);
+
+        // Rating is 1-5 stars; enforced in ReviewService and by the database.
+        review.HasCheckConstraint("CK_Reviews_Rating", "\"Rating\" BETWEEN 1 AND 5");
+
+        // The public list is always newest first.
+        review.HasIndex(r => r.CreatedAt);
+
+        // User 1 --< Review. Deleting a user removes their reviews.
+        review.HasOne(r => r.User)
+            .WithMany()
+            .HasForeignKey(r => r.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

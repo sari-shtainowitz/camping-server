@@ -57,3 +57,6 @@ Client/dist-ssr/
 # --- OS noise ---
 .DS_Store
 Thumbs.db
+
+# --- The React client lives in its own repository (see README) ---
+Client/

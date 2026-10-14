@@ -8,16 +8,17 @@ namespace Camping.Core.Interfaces;
 /// </summary>
 public interface IAmenityRepository
 {
-    Task<List<Amenity>> GetAllAsync();
-
     /// <summary>Database-side paged/filtered/sorted query.</summary>
-    Task<PagedResult<Amenity>> GetPagedAsync(AmenityQueryParameters parameters);
+    Task<PagedResult<Amenity>> GetPagedAsync(AmenityQueryParameters parameters, CancellationToken cancellationToken);
 
-    Task<Amenity?> GetByIdAsync(int id);
+    Task<Amenity?> GetByIdAsync(int id, CancellationToken cancellationToken);
 
-    Task AddAsync(Amenity amenity);
+    /// <summary>Whether another amenity already uses this name (case-insensitive).</summary>
+    Task<bool> NameExistsAsync(string name, int? excludeAmenityId, CancellationToken cancellationToken);
 
-    Task UpdateAsync(Amenity amenity);
+    Task AddAsync(Amenity amenity, CancellationToken cancellationToken);
 
-    Task DeleteAsync(int id);
+    Task UpdateAsync(Amenity amenity, CancellationToken cancellationToken);
+
+    Task DeleteAsync(int id, CancellationToken cancellationToken);
 }

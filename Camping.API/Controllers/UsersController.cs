@@ -1,6 +1,6 @@
 using AutoMapper;
-using Camping.API.DTOs.Requests;
-using Camping.API.DTOs.Responses;
+using Camping.Core.DTOs.Requests;
+using Camping.Core.DTOs.Responses;
 using Camping.Core.Entities;
 using Camping.Core.Enums;
 using Camping.Core.Querying;
@@ -38,9 +38,9 @@ public class UsersController : ControllerBase
     [HttpGet]
     [ProducesResponseType(typeof(PagedResult<UserResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<PagedResult<UserResponse>>> GetAll(
-        [FromQuery] UserQueryParameters parameters)
+        [FromQuery] UserQueryParameters parameters, CancellationToken cancellationToken)
     {
-        var page = await _service.GetPagedAsync(parameters);
+        var page = await _service.GetPagedAsync(parameters, cancellationToken);
         return Ok(_mapper.Map<PagedResult<UserResponse>>(page));
     }
 
@@ -48,9 +48,9 @@ public class UsersController : ControllerBase
     [HttpGet("{id:int}")]
     [ProducesResponseType(typeof(UserResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<UserResponse>> GetById([FromRoute] int id)
+    public async Task<ActionResult<UserResponse>> GetById([FromRoute] int id, CancellationToken cancellationToken)
     {
-        var user = await _service.GetByIdAsync(id);
+        var user = await _service.GetByIdAsync(id, cancellationToken);
         return Ok(_mapper.Map<UserResponse>(user));
     }
 
@@ -59,9 +59,10 @@ public class UsersController : ControllerBase
     [ProducesResponseType(typeof(UserResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<UserResponse>> Update([FromRoute] int id, [FromBody] UserRequest request)
+    public async Task<ActionResult<UserResponse>> Update(
+        [FromRoute] int id, [FromBody] UserRequest request, CancellationToken cancellationToken)
     {
-        var updated = await _service.UpdateAsync(id, _mapper.Map<User>(request));
+        var updated = await _service.UpdateAsync(id, _mapper.Map<User>(request), cancellationToken);
         return Ok(_mapper.Map<UserResponse>(updated));
     }
 
@@ -70,9 +71,9 @@ public class UsersController : ControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Delete([FromRoute] int id)
+    public async Task<IActionResult> Delete([FromRoute] int id, CancellationToken cancellationToken)
     {
-        await _service.DeleteAsync(id);
+        await _service.DeleteAsync(id, cancellationToken);
         return NoContent();
     }
 }

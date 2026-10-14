@@ -21,19 +21,15 @@ public class CampingSiteService : ICampingSiteService
         _sites = sites;
     }
 
-    public async Task<IReadOnlyList<CampingSite>> GetAllAsync()
+    public Task<PagedResult<CampingSite>> GetPagedAsync(
+        CampingSiteQueryParameters parameters, CancellationToken cancellationToken)
     {
-        return await _sites.GetAllAsync();
+        return _sites.GetPagedAsync(parameters, cancellationToken);
     }
 
-    public Task<PagedResult<CampingSite>> GetPagedAsync(CampingSiteQueryParameters parameters)
+    public async Task<CampingSite> GetByIdAsync(int id, CancellationToken cancellationToken)
     {
-        return _sites.GetPagedAsync(parameters);
-    }
-
-    public async Task<CampingSite> GetByIdAsync(int id)
-    {
-        var site = await _sites.GetByIdAsync(id);
+        var site = await _sites.GetByIdAsync(id, cancellationToken);
         if (site is null)
         {
             throw new NotFoundException($"Camping site {id} was not found.");
@@ -42,13 +38,13 @@ public class CampingSiteService : ICampingSiteService
         return site;
     }
 
-    public async Task<CampingSite> CreateAsync(CampingSite campingSite)
+    public async Task<CampingSite> CreateAsync(CampingSite campingSite, CancellationToken cancellationToken)
     {
         var name = (campingSite.Name ?? string.Empty).Trim();
         var address = (campingSite.Address ?? string.Empty).Trim();
 
         Validate(name, address);
-        await EnsureNameIsUniqueAsync(name, excludeSiteId: null);
+        await EnsureNameIsUniqueAsync(name, excludeSiteId: null, cancellationToken);
 
         campingSite.Id = 0;
         campingSite.Name = name;
@@ -58,42 +54,38 @@ public class CampingSiteService : ICampingSiteService
         campingSite.Tents = new List<Tent>();
         campingSite.Amenities = new List<Amenity>();
 
-        await _sites.AddAsync(campingSite);
+        await _sites.AddAsync(campingSite, cancellationToken);
         return campingSite;
     }
 
-    public async Task<CampingSite> UpdateAsync(int id, CampingSite campingSite)
+    public async Task<CampingSite> UpdateAsync(int id, CampingSite campingSite, CancellationToken cancellationToken)
     {
-        var existing = await GetByIdAsync(id);
+        var existing = await GetByIdAsync(id, cancellationToken);
 
         var name = (campingSite.Name ?? string.Empty).Trim();
         var address = (campingSite.Address ?? string.Empty).Trim();
 
         Validate(name, address);
-        await EnsureNameIsUniqueAsync(name, excludeSiteId: id);
+        await EnsureNameIsUniqueAsync(name, excludeSiteId: id, cancellationToken);
 
         existing.Name = name;
         existing.Address = address;
         existing.Description = NormalizeOptional(campingSite.Description);
 
-        await _sites.UpdateAsync(existing);
+        await _sites.UpdateAsync(existing, cancellationToken);
         return existing;
     }
 
-    public async Task DeleteAsync(int id)
+    public async Task DeleteAsync(int id, CancellationToken cancellationToken)
     {
-        var existing = await _sites.GetByIdWithTentsAsync(id);
-        if (existing is null)
-        {
-            throw new NotFoundException($"Camping site {id} was not found.");
-        }
+        await GetByIdAsync(id, cancellationToken);
 
-        if (existing.Tents.Any())
+        if (await _sites.HasTentsAsync(id, cancellationToken))
         {
             throw new BusinessRuleException("Cannot delete a camping site that still has tents.");
         }
 
-        await _sites.DeleteAsync(id);
+        await _sites.DeleteAsync(id, cancellationToken);
     }
 
     private static void Validate(string name, string address)
@@ -109,14 +101,9 @@ public class CampingSiteService : ICampingSiteService
         }
     }
 
-    private async Task EnsureNameIsUniqueAsync(string name, int? excludeSiteId)
+    private async Task EnsureNameIsUniqueAsync(string name, int? excludeSiteId, CancellationToken cancellationToken)
     {
-        var all = await _sites.GetAllAsync();
-        var taken = all.Any(s =>
-            s.Id != excludeSiteId &&
-            string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
-
-        if (taken)
+        if (await _sites.NameExistsAsync(name, excludeSiteId, cancellationToken))
         {
             throw new BusinessRuleException($"A camping site named '{name}' already exists.");
         }

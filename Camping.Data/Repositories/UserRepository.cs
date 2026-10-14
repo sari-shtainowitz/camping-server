@@ -18,21 +18,29 @@ public class UserRepository : IUserRepository
         _context = context;
     }
 
-    public async Task<List<User>> GetAllAsync()
+    public async Task<User?> GetByIdAsync(int id, CancellationToken cancellationToken)
     {
         return await _context.Users
             .AsNoTracking()
-            .ToListAsync();
+            .FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
     }
 
-    public async Task<User?> GetByIdAsync(int id)
+    // Emails are stored normalised (trimmed, lower-case) by the services, so an
+    // exact match is a case-insensitive match - and it can use the unique index.
+    public async Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken)
     {
         return await _context.Users
             .AsNoTracking()
-            .FirstOrDefaultAsync(u => u.Id == id);
+            .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
     }
 
-    public async Task<PagedResult<User>> GetPagedAsync(UserQueryParameters parameters)
+    public Task<bool> EmailExistsAsync(string email, int? excludeUserId, CancellationToken cancellationToken)
+    {
+        return _context.Users
+            .AnyAsync(u => u.Email == email && u.Id != excludeUserId, cancellationToken);
+    }
+
+    public async Task<PagedResult<User>> GetPagedAsync(UserQueryParameters parameters, CancellationToken cancellationToken)
     {
         IQueryable<User> query = _context.Users.AsNoTracking();
 
@@ -44,13 +52,13 @@ public class UserRepository : IUserRepository
         if (!string.IsNullOrWhiteSpace(parameters.Email))
         {
             var email = parameters.Email.Trim();
-            // SQL Server LIKE is case-insensitive under the server's CI collation.
-            query = query.Where(u => EF.Functions.Like(u.Email, $"%{email}%"));
+            // ILIKE: PostgreSQL's case-insensitive LIKE.
+            query = query.Where(u => EF.Functions.ILike(u.Email, $"%{email}%"));
         }
 
         query = ApplySort(query, parameters.SortBy, parameters.SortDescending);
 
-        return await query.ToPagedResultAsync(parameters.Page, parameters.PageSize);
+        return await query.ToPagedResultAsync(parameters.Page, parameters.PageSize, cancellationToken);
     }
 
     private static IQueryable<User> ApplySort(IQueryable<User> query, string? sortBy, bool descending)
@@ -66,27 +74,27 @@ public class UserRepository : IUserRepository
         return descending ? query.OrderByDescending(keySelector) : query.OrderBy(keySelector);
     }
 
-    public async Task AddAsync(User user)
+    public async Task AddAsync(User user, CancellationToken cancellationToken)
     {
-        await _context.Users.AddAsync(user);
-        await _context.SaveChangesAsync();
+        await _context.Users.AddAsync(user, cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task UpdateAsync(User user)
+    public async Task UpdateAsync(User user, CancellationToken cancellationToken)
     {
         _context.Users.Update(user);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task DeleteAsync(int id)
+    public async Task DeleteAsync(int id, CancellationToken cancellationToken)
     {
-        var user = await _context.Users.FindAsync(id);
+        var user = await _context.Users.FindAsync(new object[] { id }, cancellationToken);
         if (user is null)
         {
             return;
         }
 
         _context.Users.Remove(user);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
     }
 }

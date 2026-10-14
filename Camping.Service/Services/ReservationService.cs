@@ -4,6 +4,7 @@ using Camping.Core.Interfaces;
 using Camping.Core.Querying;
 using Camping.Service.Exceptions;
 using Camping.Service.Interfaces;
+using Microsoft.Extensions.Logging;
 
 namespace Camping.Service.Services;
 
@@ -13,7 +14,7 @@ namespace Camping.Service.Services;
 ///   * the end date must be after the start date and the stay cannot start
 ///     in the past;
 ///   * the tent must be free for the requested dates - no overlap with an
-///     existing non-cancelled reservation;
+///     existing non-cancelled reservation (a clash is a 409 Conflict);
 ///   * the total price is calculated as nights x tent price per night;
 ///   * a new reservation is created with status Confirmed.
 /// </summary>
@@ -22,30 +23,29 @@ public class ReservationService : IReservationService
     private readonly IReservationRepository _reservations;
     private readonly ITentRepository _tents;
     private readonly IUserRepository _users;
+    private readonly ILogger<ReservationService> _logger;
 
     public ReservationService(
         IReservationRepository reservations,
         ITentRepository tents,
-        IUserRepository users)
+        IUserRepository users,
+        ILogger<ReservationService> logger)
     {
         _reservations = reservations;
         _tents = tents;
         _users = users;
+        _logger = logger;
     }
 
-    public async Task<IReadOnlyList<Reservation>> GetAllAsync()
+    public Task<PagedResult<Reservation>> GetPagedAsync(
+        ReservationQueryParameters parameters, CancellationToken cancellationToken)
     {
-        return await _reservations.GetAllAsync();
+        return _reservations.GetPagedAsync(parameters, cancellationToken);
     }
 
-    public Task<PagedResult<Reservation>> GetPagedAsync(ReservationQueryParameters parameters)
+    public async Task<Reservation> GetByIdAsync(int id, CancellationToken cancellationToken)
     {
-        return _reservations.GetPagedAsync(parameters);
-    }
-
-    public async Task<Reservation> GetByIdAsync(int id)
-    {
-        var reservation = await _reservations.GetByIdAsync(id);
+        var reservation = await _reservations.GetByIdAsync(id, cancellationToken);
         if (reservation is null)
         {
             throw new NotFoundException($"Reservation {id} was not found.");
@@ -54,10 +54,10 @@ public class ReservationService : IReservationService
         return reservation;
     }
 
-    public async Task<Reservation> CreateAsync(Reservation reservation)
+    public async Task<Reservation> CreateAsync(Reservation reservation, CancellationToken cancellationToken)
     {
-        var tent = await RequireTentAsync(reservation.TentId);
-        await RequireUserAsync(reservation.UserId);
+        var tent = await RequireTentAsync(reservation.TentId, cancellationToken);
+        await RequireUserAsync(reservation.UserId, cancellationToken);
 
         if (!tent.IsActive)
         {
@@ -79,16 +79,23 @@ public class ReservationService : IReservationService
         await _reservations.AddTransactionalAsync(
             reservation,
             () => EnsureTentIsFreeAsync(
-                reservation.TentId, reservation.StartDate, reservation.EndDate, excludeReservationId: null));
+                reservation.TentId, reservation.StartDate, reservation.EndDate,
+                excludeReservationId: null, cancellationToken),
+            cancellationToken);
+
+        _logger.LogInformation(
+            "Reservation {ReservationId} created: tent {TentId}, user {UserId}, {StartDate} to {EndDate}",
+            reservation.Id, reservation.TentId, reservation.UserId, reservation.StartDate, reservation.EndDate);
+
         return reservation;
     }
 
-    public async Task<Reservation> UpdateAsync(int id, Reservation reservation)
+    public async Task<Reservation> UpdateAsync(int id, Reservation reservation, CancellationToken cancellationToken)
     {
-        var existing = await GetByIdAsync(id);
+        var existing = await GetByIdAsync(id, cancellationToken);
 
-        var tent = await RequireTentAsync(reservation.TentId);
-        await RequireUserAsync(reservation.UserId);
+        var tent = await RequireTentAsync(reservation.TentId, cancellationToken);
+        await RequireUserAsync(reservation.UserId, cancellationToken);
 
         if (!tent.IsActive)
         {
@@ -108,19 +115,24 @@ public class ReservationService : IReservationService
         await _reservations.UpdateTransactionalAsync(
             existing,
             () => EnsureTentIsFreeAsync(
-                existing.TentId, existing.StartDate, existing.EndDate, excludeReservationId: id));
+                existing.TentId, existing.StartDate, existing.EndDate,
+                excludeReservationId: id, cancellationToken),
+            cancellationToken);
+
+        _logger.LogInformation("Reservation {ReservationId} updated", id);
         return existing;
     }
 
-    public async Task DeleteAsync(int id)
+    public async Task DeleteAsync(int id, CancellationToken cancellationToken)
     {
-        await GetByIdAsync(id);
-        await _reservations.DeleteAsync(id);
+        await GetByIdAsync(id, cancellationToken);
+        await _reservations.DeleteAsync(id, cancellationToken);
+        _logger.LogInformation("Reservation {ReservationId} deleted", id);
     }
 
-    private async Task<Tent> RequireTentAsync(int tentId)
+    private async Task<Tent> RequireTentAsync(int tentId, CancellationToken cancellationToken)
     {
-        var tent = await _tents.GetByIdAsync(tentId);
+        var tent = await _tents.GetByIdAsync(tentId, cancellationToken);
         if (tent is null)
         {
             throw new BusinessRuleException($"Tent {tentId} does not exist.");
@@ -129,9 +141,9 @@ public class ReservationService : IReservationService
         return tent;
     }
 
-    private async Task RequireUserAsync(int userId)
+    private async Task RequireUserAsync(int userId, CancellationToken cancellationToken)
     {
-        var user = await _users.GetByIdAsync(userId);
+        var user = await _users.GetByIdAsync(userId, cancellationToken);
         if (user is null)
         {
             throw new BusinessRuleException($"User {userId} does not exist.");
@@ -152,19 +164,20 @@ public class ReservationService : IReservationService
     }
 
     private async Task EnsureTentIsFreeAsync(
-        int tentId, DateOnly startDate, DateOnly endDate, int? excludeReservationId)
+        int tentId, DateOnly startDate, DateOnly endDate, int? excludeReservationId,
+        CancellationToken cancellationToken)
     {
-        var all = await _reservations.GetAllAsync();
-        var overlaps = all.Any(r =>
-            r.TentId == tentId &&
-            r.Id != excludeReservationId &&
-            r.Status != ReservationStatus.Cancelled &&
-            startDate < r.EndDate &&
-            r.StartDate < endDate);
+        _logger.LogDebug(
+            "Checking availability of tent {TentId} for {StartDate} to {EndDate}", tentId, startDate, endDate);
+
+        var overlaps = await _reservations.HasOverlapAsync(
+            tentId, startDate, endDate, excludeReservationId, cancellationToken);
 
         if (overlaps)
         {
-            throw new BusinessRuleException("The tent is already reserved for the selected dates.");
+            // The request is valid on its own but clashes with the tent's current
+            // bookings - that is a 409 Conflict, not a 400.
+            throw new ResourceConflictException("The tent is already reserved for the selected dates.");
         }
     }
 

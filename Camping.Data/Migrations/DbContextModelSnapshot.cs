@@ -17,7 +17,7 @@ namespace Camping.Data.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "6.0.36")
+                .HasAnnotation("ProductVersion", "6.0.29")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -197,6 +197,39 @@ namespace Camping.Data.Migrations
                             TotalPrice = 120.00m,
                             UserId = 1
                         });
+                });
+
+            modelBuilder.Entity("Camping.Core.Entities.Review", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Rating")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("Reviews");
+
+                    b.HasCheckConstraint("CK_Reviews_Rating", "\"Rating\" BETWEEN 1 AND 5");
                 });
 
             modelBuilder.Entity("Camping.Core.Entities.Tent", b =>
@@ -383,6 +416,17 @@ namespace Camping.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Tent");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Camping.Core.Entities.Review", b =>
+                {
+                    b.HasOne("Camping.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("User");
                 });

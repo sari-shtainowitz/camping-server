@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
@@ -7,6 +7,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- 1591: missing XML comment on a public member - only action summaries feed Swagger. -->
     <NoWarn>$(NoWarn);1591</NoWarn>
+    <UserSecretsId>5e44f3ee-8ae4-4551-8e97-cd83cf6ca88b</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

@@ -4,6 +4,7 @@ using Camping.Core.Interfaces;
 using Camping.Service.Exceptions;
 using Camping.Service.Interfaces;
 using Camping.Service.Security;
+using Microsoft.Extensions.Logging;
 
 namespace Camping.Service.Services;
 
@@ -14,6 +15,8 @@ namespace Camping.Service.Services;
 ///   * a newly registered account is always a Customer;
 ///   * the password is stored only as a PBKDF2 hash;
 ///   * login failures return a single generic message (no account enumeration).
+/// Logs never contain the password, the token or the registration payload -
+/// only the user id.
 /// </summary>
 public class AuthService : IAuthService
 {
@@ -21,14 +24,16 @@ public class AuthService : IAuthService
 
     private readonly IUserRepository _users;
     private readonly IPasswordHasher _passwordHasher;
+    private readonly ILogger<AuthService> _logger;
 
-    public AuthService(IUserRepository users, IPasswordHasher passwordHasher)
+    public AuthService(IUserRepository users, IPasswordHasher passwordHasher, ILogger<AuthService> logger)
     {
         _users = users;
         _passwordHasher = passwordHasher;
+        _logger = logger;
     }
 
-    public async Task<User> RegisterAsync(User user, string password)
+    public async Task<User> RegisterAsync(User user, string password, CancellationToken cancellationToken)
     {
         var fullName = (user.FullName ?? string.Empty).Trim();
         var email = (user.Email ?? string.Empty).Trim().ToLowerInvariant();
@@ -48,8 +53,7 @@ public class AuthService : IAuthService
             throw new BusinessRuleException($"Password must be at least {MinPasswordLength} characters.");
         }
 
-        var all = await _users.GetAllAsync();
-        if (all.Any(u => string.Equals(u.Email, email, StringComparison.OrdinalIgnoreCase)))
+        if (await _users.EmailExistsAsync(email, excludeUserId: null, cancellationToken))
         {
             throw new BusinessRuleException($"Email '{email}' is already registered.");
         }
@@ -66,17 +70,16 @@ public class AuthService : IAuthService
             Reservations = new List<Reservation>()
         };
 
-        await _users.AddAsync(newUser);
+        await _users.AddAsync(newUser, cancellationToken);
+        _logger.LogInformation("New customer account {UserId} registered", newUser.Id);
         return newUser;
     }
 
-    public async Task<User> AuthenticateAsync(string email, string password)
+    public async Task<User> AuthenticateAsync(string email, string password, CancellationToken cancellationToken)
     {
         var normalizedEmail = (email ?? string.Empty).Trim().ToLowerInvariant();
 
-        var all = await _users.GetAllAsync();
-        var user = all.FirstOrDefault(u =>
-            string.Equals(u.Email, normalizedEmail, StringComparison.OrdinalIgnoreCase));
+        var user = await _users.GetByEmailAsync(normalizedEmail, cancellationToken);
 
         if (user is null ||
             string.IsNullOrEmpty(user.PasswordHash) ||
@@ -85,6 +88,7 @@ public class AuthService : IAuthService
             throw new AuthenticationFailedException("Invalid email or password.");
         }
 
+        _logger.LogInformation("User {UserId} signed in", user.Id);
         return user;
     }
 }

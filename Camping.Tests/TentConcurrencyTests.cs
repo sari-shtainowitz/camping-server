@@ -1,5 +1,6 @@
 using Camping.Core.Entities;
 using Camping.Core.Enums;
+using Camping.Data.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 using CampingDbContext = Camping.Data.DbContext;
@@ -80,6 +81,55 @@ public class TentConcurrencyTests
 
         Assert.NotNull(tokenAfter);
         Assert.NotEqual(tokenBefore, tokenAfter);
+    }
+
+    [Fact]
+    public async Task HasOverlapAsync_applies_the_half_open_date_rule_in_the_database()
+    {
+        _database.RequireAvailable();
+
+        const int tentId = 3;
+
+        // Booked: Feb 10 -> Feb 13 (nights of the 10th, 11th and 12th).
+        await using (var arrange = _database.NewContext())
+        {
+            arrange.Reservations.Add(new Reservation
+            {
+                TentId = tentId,
+                UserId = 1,
+                StartDate = new DateOnly(2099, 2, 10),
+                EndDate = new DateOnly(2099, 2, 13),
+                Status = ReservationStatus.Confirmed,
+                TotalPrice = 360m,
+                CreatedAt = DateTime.UtcNow
+            });
+            // A cancelled booking never blocks the tent.
+            arrange.Reservations.Add(new Reservation
+            {
+                TentId = tentId,
+                UserId = 1,
+                StartDate = new DateOnly(2099, 2, 20),
+                EndDate = new DateOnly(2099, 2, 25),
+                Status = ReservationStatus.Cancelled,
+                TotalPrice = 600m,
+                CreatedAt = DateTime.UtcNow
+            });
+            await arrange.SaveChangesAsync();
+        }
+
+        await using var context = _database.NewContext();
+        var repository = new ReservationRepository(context);
+
+        Task<bool> Overlaps(int fromDay, int toDay) => repository.HasOverlapAsync(
+            tentId, new DateOnly(2099, 2, fromDay), new DateOnly(2099, 2, toDay),
+            excludeReservationId: null, CancellationToken.None);
+
+        Assert.True(await Overlaps(12, 15));    // starts inside the booking
+        Assert.True(await Overlaps(8, 11));     // ends inside the booking
+        Assert.True(await Overlaps(9, 14));     // covers the whole booking
+        Assert.False(await Overlaps(13, 15));   // check-in on the check-out day is fine
+        Assert.False(await Overlaps(7, 10));    // check-out on the check-in day is fine
+        Assert.False(await Overlaps(21, 23));   // only a cancelled booking there
     }
 
     private static Reservation NewReservation(int tentId, int userId, int startDay) => new()

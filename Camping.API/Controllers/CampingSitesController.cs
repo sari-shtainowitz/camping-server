@@ -1,6 +1,6 @@
 using AutoMapper;
-using Camping.API.DTOs.Requests;
-using Camping.API.DTOs.Responses;
+using Camping.Core.DTOs.Requests;
+using Camping.Core.DTOs.Responses;
 using Camping.Core.Entities;
 using Camping.Core.Enums;
 using Camping.Core.Querying;
@@ -36,9 +36,9 @@ public class CampingSitesController : ControllerBase
     [HttpGet]
     [ProducesResponseType(typeof(PagedResult<CampingSiteResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<PagedResult<CampingSiteResponse>>> GetAll(
-        [FromQuery] CampingSiteQueryParameters parameters)
+        [FromQuery] CampingSiteQueryParameters parameters, CancellationToken cancellationToken)
     {
-        var page = await _service.GetPagedAsync(parameters);
+        var page = await _service.GetPagedAsync(parameters, cancellationToken);
         return Ok(_mapper.Map<PagedResult<CampingSiteResponse>>(page));
     }
 
@@ -46,9 +46,10 @@ public class CampingSitesController : ControllerBase
     [HttpGet("{id:int}")]
     [ProducesResponseType(typeof(CampingSiteResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<CampingSiteResponse>> GetById([FromRoute] int id)
+    public async Task<ActionResult<CampingSiteResponse>> GetById(
+        [FromRoute] int id, CancellationToken cancellationToken)
     {
-        var site = await _service.GetByIdAsync(id);
+        var site = await _service.GetByIdAsync(id, cancellationToken);
         return Ok(_mapper.Map<CampingSiteResponse>(site));
     }
 
@@ -58,9 +59,10 @@ public class CampingSitesController : ControllerBase
     [ProducesResponseType(typeof(CampingSiteResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<ActionResult<CampingSiteResponse>> Create([FromBody] CampingSiteRequest request)
+    public async Task<ActionResult<CampingSiteResponse>> Create(
+        [FromBody] CampingSiteRequest request, CancellationToken cancellationToken)
     {
-        var created = await _service.CreateAsync(_mapper.Map<CampingSite>(request));
+        var created = await _service.CreateAsync(_mapper.Map<CampingSite>(request), cancellationToken);
         var response = _mapper.Map<CampingSiteResponse>(created);
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, response);
     }
@@ -72,9 +74,10 @@ public class CampingSitesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<CampingSiteResponse>> Update([FromRoute] int id, [FromBody] CampingSiteRequest request)
+    public async Task<ActionResult<CampingSiteResponse>> Update(
+        [FromRoute] int id, [FromBody] CampingSiteRequest request, CancellationToken cancellationToken)
     {
-        var updated = await _service.UpdateAsync(id, _mapper.Map<CampingSite>(request));
+        var updated = await _service.UpdateAsync(id, _mapper.Map<CampingSite>(request), cancellationToken);
         return Ok(_mapper.Map<CampingSiteResponse>(updated));
     }
 
@@ -85,9 +88,9 @@ public class CampingSitesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Delete([FromRoute] int id)
+    public async Task<IActionResult> Delete([FromRoute] int id, CancellationToken cancellationToken)
     {
-        await _service.DeleteAsync(id);
+        await _service.DeleteAsync(id, cancellationToken);
         return NoContent();
     }
 }

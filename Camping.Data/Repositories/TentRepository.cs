@@ -18,21 +18,25 @@ public class TentRepository : ITentRepository
         _context = context;
     }
 
-    public async Task<List<Tent>> GetAllAsync()
+    public async Task<Tent?> GetByIdAsync(int id, CancellationToken cancellationToken)
     {
         return await _context.Tents
             .AsNoTracking()
-            .ToListAsync();
+            .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
     }
 
-    public async Task<Tent?> GetByIdAsync(int id)
+    public Task<bool> LabelExistsAsync(
+        int campingSiteId, string label, int? excludeTentId, CancellationToken cancellationToken)
     {
-        return await _context.Tents
-            .AsNoTracking()
-            .FirstOrDefaultAsync(t => t.Id == id);
+        var lowered = label.ToLower();
+        return _context.Tents.AnyAsync(
+            t => t.CampingSiteId == campingSiteId &&
+                 t.Id != excludeTentId &&
+                 t.Label.ToLower() == lowered,
+            cancellationToken);
     }
 
-    public async Task<PagedResult<Tent>> GetPagedAsync(TentQueryParameters parameters)
+    public async Task<PagedResult<Tent>> GetPagedAsync(TentQueryParameters parameters, CancellationToken cancellationToken)
     {
         IQueryable<Tent> query = _context.Tents.AsNoTracking();
 
@@ -68,7 +72,7 @@ public class TentRepository : ITentRepository
 
         query = ApplySort(query, parameters.SortBy, parameters.SortDescending);
 
-        return await query.ToPagedResultAsync(parameters.Page, parameters.PageSize);
+        return await query.ToPagedResultAsync(parameters.Page, parameters.PageSize, cancellationToken);
     }
 
     private static IQueryable<Tent> ApplySort(IQueryable<Tent> query, string? sortBy, bool descending)
@@ -85,27 +89,27 @@ public class TentRepository : ITentRepository
         return descending ? query.OrderByDescending(keySelector) : query.OrderBy(keySelector);
     }
 
-    public async Task AddAsync(Tent tent)
+    public async Task AddAsync(Tent tent, CancellationToken cancellationToken)
     {
-        await _context.Tents.AddAsync(tent);
-        await _context.SaveChangesAsync();
+        await _context.Tents.AddAsync(tent, cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task UpdateAsync(Tent tent)
+    public async Task UpdateAsync(Tent tent, CancellationToken cancellationToken)
     {
         _context.Tents.Update(tent);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task DeleteAsync(int id)
+    public async Task DeleteAsync(int id, CancellationToken cancellationToken)
     {
-        var tent = await _context.Tents.FindAsync(id);
+        var tent = await _context.Tents.FindAsync(new object[] { id }, cancellationToken);
         if (tent is null)
         {
             return;
         }
 
         _context.Tents.Remove(tent);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
     }
 }

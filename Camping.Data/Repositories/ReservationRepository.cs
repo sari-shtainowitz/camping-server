@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using Camping.Core.Entities;
+using Camping.Core.Enums;
 using Camping.Core.Exceptions;
 using Camping.Core.Interfaces;
 using Camping.Core.Querying;
@@ -8,7 +9,8 @@ using Microsoft.EntityFrameworkCore;
 namespace Camping.Data.Repositories;
 
 /// <summary>
-/// Basic EF Core data access for <see cref="Reservation"/> entities.
+/// EF Core data access for <see cref="Reservation"/> entities, including the
+/// transactional writes that guard the limited resource (the tent).
 /// </summary>
 public class ReservationRepository : IReservationRepository
 {
@@ -19,23 +21,24 @@ public class ReservationRepository : IReservationRepository
         _context = context;
     }
 
-    public async Task<List<Reservation>> GetAllAsync()
-    {
-        return await _context.Reservations
+    // Read model: each reservation with its tent, the tent's camping site and the
+    // guest, loaded in the SAME query (JOINs) - no per-row follow-up queries (N+1).
+    private IQueryable<Reservation> WithDetails() =>
+        _context.Reservations
             .AsNoTracking()
-            .ToListAsync();
+            .Include(r => r.Tent)
+                .ThenInclude(t => t.CampingSite)
+            .Include(r => r.User);
+
+    public async Task<Reservation?> GetByIdAsync(int id, CancellationToken cancellationToken)
+    {
+        return await WithDetails().FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
     }
 
-    public async Task<Reservation?> GetByIdAsync(int id)
+    public async Task<PagedResult<Reservation>> GetPagedAsync(
+        ReservationQueryParameters parameters, CancellationToken cancellationToken)
     {
-        return await _context.Reservations
-            .AsNoTracking()
-            .FirstOrDefaultAsync(r => r.Id == id);
-    }
-
-    public async Task<PagedResult<Reservation>> GetPagedAsync(ReservationQueryParameters parameters)
-    {
-        IQueryable<Reservation> query = _context.Reservations.AsNoTracking();
+        IQueryable<Reservation> query = WithDetails();
 
         if (parameters.TentId is int tentId)
         {
@@ -66,7 +69,7 @@ public class ReservationRepository : IReservationRepository
 
         query = ApplySort(query, parameters.SortBy, parameters.SortDescending);
 
-        return await query.ToPagedResultAsync(parameters.Page, parameters.PageSize);
+        return await query.ToPagedResultAsync(parameters.Page, parameters.PageSize, cancellationToken);
     }
 
     private static IQueryable<Reservation> ApplySort(
@@ -83,23 +86,39 @@ public class ReservationRepository : IReservationRepository
         return descending ? query.OrderByDescending(keySelector) : query.OrderBy(keySelector);
     }
 
-    public async Task AddAsync(Reservation reservation)
+    // Same overlap rule as before ([start, end) ranges, cancelled bookings do not
+    // count), but evaluated by the database as a single EXISTS query instead of
+    // loading every reservation into memory.
+    public Task<bool> HasOverlapAsync(
+        int tentId, DateOnly startDate, DateOnly endDate, int? excludeReservationId,
+        CancellationToken cancellationToken)
     {
-        await _context.Reservations.AddAsync(reservation);
-        await _context.SaveChangesAsync();
+        return _context.Reservations.AnyAsync(
+            r => r.TentId == tentId &&
+                 r.Id != excludeReservationId &&
+                 r.Status != ReservationStatus.Cancelled &&
+                 startDate < r.EndDate &&
+                 r.StartDate < endDate,
+            cancellationToken);
     }
 
-    public async Task UpdateAsync(Reservation reservation)
+    public Task<bool> ExistsForTentAsync(int tentId, CancellationToken cancellationToken)
     {
-        _context.Reservations.Update(reservation);
-        await _context.SaveChangesAsync();
+        return _context.Reservations.AnyAsync(r => r.TentId == tentId, cancellationToken);
     }
 
-    public Task AddTransactionalAsync(Reservation reservation, Func<Task> ensureTentIsAvailable)
-        => PersistWithTentGuardAsync(reservation, ensureTentIsAvailable, isNew: true);
+    public Task<bool> ExistsForUserAsync(int userId, CancellationToken cancellationToken)
+    {
+        return _context.Reservations.AnyAsync(r => r.UserId == userId, cancellationToken);
+    }
 
-    public Task UpdateTransactionalAsync(Reservation reservation, Func<Task> ensureTentIsAvailable)
-        => PersistWithTentGuardAsync(reservation, ensureTentIsAvailable, isNew: false);
+    public Task AddTransactionalAsync(
+        Reservation reservation, Func<Task> ensureTentIsAvailable, CancellationToken cancellationToken)
+        => PersistWithTentGuardAsync(reservation, ensureTentIsAvailable, isNew: true, cancellationToken);
+
+    public Task UpdateTransactionalAsync(
+        Reservation reservation, Func<Task> ensureTentIsAvailable, CancellationToken cancellationToken)
+        => PersistWithTentGuardAsync(reservation, ensureTentIsAvailable, isNew: false, cancellationToken);
 
     /// <summary>
     /// Runs the availability check and the reservation write in one transaction.
@@ -108,17 +127,23 @@ public class ReservationRepository : IReservationRepository
     /// <see cref="ConcurrencyConflictException"/>.
     /// </summary>
     private async Task PersistWithTentGuardAsync(
-        Reservation reservation, Func<Task> ensureTentIsAvailable, bool isNew)
+        Reservation reservation, Func<Task> ensureTentIsAvailable, bool isNew,
+        CancellationToken cancellationToken)
     {
-        await using var transaction = await _context.Database.BeginTransactionAsync();
+        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
 
         await ensureTentIsAvailable();
 
-        var tent = await _context.Tents.FirstOrDefaultAsync(t => t.Id == reservation.TentId);
+        var tent = await _context.Tents.FirstOrDefaultAsync(t => t.Id == reservation.TentId, cancellationToken);
         if (tent is null)
         {
             throw new InvalidOperationException($"Tent {reservation.TentId} was not found.");
         }
+
+        // The reservation may have been read with its navigation properties
+        // (see WithDetails); never let EF try to save that object graph too.
+        reservation.Tent = null!;
+        reservation.User = null!;
 
         if (isNew)
         {
@@ -131,26 +156,26 @@ public class ReservationRepository : IReservationRepository
 
         try
         {
-            await _context.SaveChangesAsync();
-            await transaction.CommitAsync();
+            await _context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException ex)
         {
-            await transaction.RollbackAsync();
+            await transaction.RollbackAsync(cancellationToken);
             throw new ConcurrencyConflictException(
                 "That tent was just booked by someone else. Please check availability and try again.", ex);
         }
     }
 
-    public async Task DeleteAsync(int id)
+    public async Task DeleteAsync(int id, CancellationToken cancellationToken)
     {
-        var reservation = await _context.Reservations.FindAsync(id);
+        var reservation = await _context.Reservations.FindAsync(new object[] { id }, cancellationToken);
         if (reservation is null)
         {
             return;
         }
 
         _context.Reservations.Remove(reservation);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
     }
 }

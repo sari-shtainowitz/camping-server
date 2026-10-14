@@ -1,8 +1,8 @@
 using System.Security.Claims;
 using AutoMapper;
 using Camping.API.Controllers;
-using Camping.API.DTOs.Requests;
-using Camping.API.DTOs.Responses;
+using Camping.Core.DTOs.Requests;
+using Camping.Core.DTOs.Responses;
 using Camping.API.Mapping;
 using Camping.Core.Entities;
 using Camping.Core.Enums;
@@ -87,9 +87,9 @@ public class ReservationsControllerAuthorizationTests
     [Fact]
     public async Task GetById_allows_a_customer_to_read_their_own_reservation()
     {
-        _service.Setup(s => s.GetByIdAsync(5)).ReturnsAsync(Reservation(id: 5, userId: 42));
+        _service.Setup(s => s.GetByIdAsync(5, It.IsAny<CancellationToken>())).ReturnsAsync(Reservation(id: 5, userId: 42));
 
-        var result = await AsCustomer(userId: 42).GetById(5);
+        var result = await AsCustomer(userId: 42).GetById(5, CancellationToken.None);
 
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var body = Assert.IsType<ReservationResponse>(ok.Value);
@@ -100,9 +100,9 @@ public class ReservationsControllerAuthorizationTests
     [Fact]
     public async Task GetById_returns_403_when_a_customer_requests_another_users_reservation()
     {
-        _service.Setup(s => s.GetByIdAsync(9)).ReturnsAsync(Reservation(id: 9, userId: 99));
+        _service.Setup(s => s.GetByIdAsync(9, It.IsAny<CancellationToken>())).ReturnsAsync(Reservation(id: 9, userId: 99));
 
-        var result = await AsCustomer(userId: 42).GetById(9);
+        var result = await AsCustomer(userId: 42).GetById(9, CancellationToken.None);
 
         Assert.IsType<ForbidResult>(result.Result);
     }
@@ -110,13 +110,50 @@ public class ReservationsControllerAuthorizationTests
     [Fact]
     public async Task GetById_allows_an_admin_to_read_another_users_reservation()
     {
-        _service.Setup(s => s.GetByIdAsync(9)).ReturnsAsync(Reservation(id: 9, userId: 99));
+        _service.Setup(s => s.GetByIdAsync(9, It.IsAny<CancellationToken>())).ReturnsAsync(Reservation(id: 9, userId: 99));
 
-        var result = await AsAdmin(userId: 1).GetById(9);
+        var result = await AsAdmin(userId: 1).GetById(9, CancellationToken.None);
 
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var body = Assert.IsType<ReservationResponse>(ok.Value);
         Assert.Equal(99, body.UserId);
+    }
+
+    // ------------------------------------------------------------------ Create (8)
+
+    [Fact]
+    public async Task Create_books_for_the_caller_in_the_JWT_and_ignores_a_userId_in_the_body()
+    {
+        Reservation? received = null;
+        _service.Setup(s => s.CreateAsync(It.IsAny<Reservation>(), It.IsAny<CancellationToken>()))
+            .Callback<Reservation, CancellationToken>((r, _) => received = r)
+            .ReturnsAsync((Reservation r, CancellationToken _) => { r.Id = 77; return r; });
+
+        // Customer 42 tries to book in the name of user 99.
+        var request = SampleRequest();
+        Assert.Equal(99, request.UserId);
+
+        var result = await AsCustomer(userId: 42).Create(request, CancellationToken.None);
+
+        Assert.IsType<CreatedAtActionResult>(result.Result);
+        Assert.NotNull(received);
+        Assert.Equal(42, received!.UserId);
+    }
+
+    [Fact]
+    public async Task Update_by_a_customer_cannot_move_their_reservation_to_another_user()
+    {
+        _service.Setup(s => s.GetByIdAsync(5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Reservation(id: 5, userId: 42));
+        Reservation? received = null;
+        _service.Setup(s => s.UpdateAsync(5, It.IsAny<Reservation>(), It.IsAny<CancellationToken>()))
+            .Callback<int, Reservation, CancellationToken>((_, r, _) => received = r)
+            .ReturnsAsync((int _, Reservation r, CancellationToken _) => r);
+
+        await AsCustomer(userId: 42).Update(5, SampleRequest(), CancellationToken.None);   // body says user 99
+
+        Assert.NotNull(received);
+        Assert.Equal(42, received!.UserId);
     }
 
     // ------------------------------------------------------------------ Update (3)
@@ -124,12 +161,12 @@ public class ReservationsControllerAuthorizationTests
     [Fact]
     public async Task Update_returns_403_when_a_customer_updates_another_users_reservation()
     {
-        _service.Setup(s => s.GetByIdAsync(9)).ReturnsAsync(Reservation(id: 9, userId: 99));
+        _service.Setup(s => s.GetByIdAsync(9, It.IsAny<CancellationToken>())).ReturnsAsync(Reservation(id: 9, userId: 99));
 
-        var result = await AsCustomer(userId: 42).Update(9, SampleRequest());
+        var result = await AsCustomer(userId: 42).Update(9, SampleRequest(), CancellationToken.None);
 
         Assert.IsType<ForbidResult>(result.Result);
-        _service.Verify(s => s.UpdateAsync(It.IsAny<int>(), It.IsAny<Reservation>()), Times.Never);
+        _service.Verify(s => s.UpdateAsync(It.IsAny<int>(), It.IsAny<Reservation>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // ------------------------------------------------------------------ Delete (4, 7)
@@ -137,24 +174,24 @@ public class ReservationsControllerAuthorizationTests
     [Fact]
     public async Task Delete_returns_403_when_a_customer_deletes_another_users_reservation()
     {
-        _service.Setup(s => s.GetByIdAsync(9)).ReturnsAsync(Reservation(id: 9, userId: 99));
+        _service.Setup(s => s.GetByIdAsync(9, It.IsAny<CancellationToken>())).ReturnsAsync(Reservation(id: 9, userId: 99));
 
-        var result = await AsCustomer(userId: 42).Delete(9);
+        var result = await AsCustomer(userId: 42).Delete(9, CancellationToken.None);
 
         Assert.IsType<ForbidResult>(result);
-        _service.Verify(s => s.DeleteAsync(It.IsAny<int>()), Times.Never);
+        _service.Verify(s => s.DeleteAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
     public async Task Delete_allows_an_admin_to_delete_another_users_reservation()
     {
-        _service.Setup(s => s.GetByIdAsync(9)).ReturnsAsync(Reservation(id: 9, userId: 99));
-        _service.Setup(s => s.DeleteAsync(9)).Returns(Task.CompletedTask);
+        _service.Setup(s => s.GetByIdAsync(9, It.IsAny<CancellationToken>())).ReturnsAsync(Reservation(id: 9, userId: 99));
+        _service.Setup(s => s.DeleteAsync(9, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
-        var result = await AsAdmin(userId: 1).Delete(9);
+        var result = await AsAdmin(userId: 1).Delete(9, CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
-        _service.Verify(s => s.DeleteAsync(9), Times.Once);
+        _service.Verify(s => s.DeleteAsync(9, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // ------------------------------------------------------------------- GetAll (5)
@@ -163,8 +200,8 @@ public class ReservationsControllerAuthorizationTests
     public async Task GetAll_ignores_a_customers_attempt_to_list_another_users_reservations()
     {
         ReservationQueryParameters? received = null;
-        _service.Setup(s => s.GetPagedAsync(It.IsAny<ReservationQueryParameters>()))
-            .Callback<ReservationQueryParameters>(p => received = p)
+        _service.Setup(s => s.GetPagedAsync(It.IsAny<ReservationQueryParameters>(), It.IsAny<CancellationToken>()))
+            .Callback<ReservationQueryParameters, CancellationToken>((p, _) => received = p)
             .ReturnsAsync(new PagedResult<Reservation>
             {
                 Items = Array.Empty<Reservation>(),
@@ -176,7 +213,7 @@ public class ReservationsControllerAuthorizationTests
         // The caller is Customer 42 but asks the endpoint for Customer 999's reservations.
         var requestedParameters = new ReservationQueryParameters { UserId = 999 };
 
-        await AsCustomer(userId: 42).GetAll(requestedParameters);
+        await AsCustomer(userId: 42).GetAll(requestedParameters, CancellationToken.None);
 
         Assert.NotNull(received);
         Assert.Equal(42, received!.UserId);

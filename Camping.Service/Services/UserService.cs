@@ -7,7 +7,7 @@ using Camping.Service.Interfaces;
 namespace Camping.Service.Services;
 
 /// <summary>
-/// Business rules for users:
+/// Business rules for users (accounts are created through AuthService.RegisterAsync):
 ///   * full name and email are required;
 ///   * email is stored normalised (trimmed, lower-case) and must be unique;
 ///   * a user that still has reservations cannot be deleted.
@@ -23,19 +23,14 @@ public class UserService : IUserService
         _reservations = reservations;
     }
 
-    public async Task<IReadOnlyList<User>> GetAllAsync()
+    public Task<PagedResult<User>> GetPagedAsync(UserQueryParameters parameters, CancellationToken cancellationToken)
     {
-        return await _users.GetAllAsync();
+        return _users.GetPagedAsync(parameters, cancellationToken);
     }
 
-    public Task<PagedResult<User>> GetPagedAsync(UserQueryParameters parameters)
+    public async Task<User> GetByIdAsync(int id, CancellationToken cancellationToken)
     {
-        return _users.GetPagedAsync(parameters);
-    }
-
-    public async Task<User> GetByIdAsync(int id)
-    {
-        var user = await _users.GetByIdAsync(id);
+        var user = await _users.GetByIdAsync(id, cancellationToken);
         if (user is null)
         {
             throw new NotFoundException($"User {id} was not found.");
@@ -44,55 +39,39 @@ public class UserService : IUserService
         return user;
     }
 
-    public async Task<User> CreateAsync(User user)
+    public async Task<User> UpdateAsync(int id, User user, CancellationToken cancellationToken)
     {
-        var fullName = (user.FullName ?? string.Empty).Trim();
-        var email = NormalizeEmail(user.Email);
-
-        ValidateRequiredFields(fullName, email);
-        await EnsureEmailIsUniqueAsync(email, excludeUserId: null);
-
-        user.Id = 0;
-        user.FullName = fullName;
-        user.Email = email;
-        user.PhoneNumber = NormalizeOptional(user.PhoneNumber);
-        user.CreatedAt = DateTime.UtcNow;
-        user.Reservations = new List<Reservation>();
-
-        await _users.AddAsync(user);
-        return user;
-    }
-
-    public async Task<User> UpdateAsync(int id, User user)
-    {
-        var existing = await GetByIdAsync(id);
+        var existing = await GetByIdAsync(id, cancellationToken);
 
         var fullName = (user.FullName ?? string.Empty).Trim();
         var email = NormalizeEmail(user.Email);
 
         ValidateRequiredFields(fullName, email);
-        await EnsureEmailIsUniqueAsync(email, excludeUserId: id);
+
+        if (await _users.EmailExistsAsync(email, excludeUserId: id, cancellationToken))
+        {
+            throw new BusinessRuleException($"Email '{email}' is already in use.");
+        }
 
         existing.FullName = fullName;
         existing.Email = email;
         existing.PhoneNumber = NormalizeOptional(user.PhoneNumber);
         existing.Role = user.Role;
 
-        await _users.UpdateAsync(existing);
+        await _users.UpdateAsync(existing, cancellationToken);
         return existing;
     }
 
-    public async Task DeleteAsync(int id)
+    public async Task DeleteAsync(int id, CancellationToken cancellationToken)
     {
-        await GetByIdAsync(id);
+        await GetByIdAsync(id, cancellationToken);
 
-        var reservations = await _reservations.GetAllAsync();
-        if (reservations.Any(r => r.UserId == id))
+        if (await _reservations.ExistsForUserAsync(id, cancellationToken))
         {
             throw new BusinessRuleException("Cannot delete a user that still has reservations.");
         }
 
-        await _users.DeleteAsync(id);
+        await _users.DeleteAsync(id, cancellationToken);
     }
 
     private static void ValidateRequiredFields(string fullName, string email)
@@ -105,19 +84,6 @@ public class UserService : IUserService
         if (string.IsNullOrWhiteSpace(email))
         {
             throw new BusinessRuleException("Email is required.");
-        }
-    }
-
-    private async Task EnsureEmailIsUniqueAsync(string email, int? excludeUserId)
-    {
-        var all = await _users.GetAllAsync();
-        var taken = all.Any(u =>
-            u.Id != excludeUserId &&
-            string.Equals(u.Email, email, StringComparison.OrdinalIgnoreCase));
-
-        if (taken)
-        {
-            throw new BusinessRuleException($"Email '{email}' is already in use.");
         }
     }
 

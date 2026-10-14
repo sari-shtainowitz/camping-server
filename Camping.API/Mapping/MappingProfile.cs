@@ -1,6 +1,6 @@
 using AutoMapper;
-using Camping.API.DTOs.Requests;
-using Camping.API.DTOs.Responses;
+using Camping.Core.DTOs.Requests;
+using Camping.Core.DTOs.Responses;
 using Camping.Core.Entities;
 using Camping.Core.Querying;
 
@@ -48,13 +48,26 @@ public class MappingProfile : Profile
             .ForMember(d => d.Reservations, o => o.Ignore());
 
         // ----- Reservation -----
-        CreateMap<Reservation, ReservationResponse>();
+        // The display names come from the related rows loaded with Include/ThenInclude;
+        // they stay null when those navigations were not loaded.
+        CreateMap<Reservation, ReservationResponse>()
+            .ForMember(d => d.TentLabel, o => o.MapFrom(s => s.Tent.Label))
+            .ForMember(d => d.CampingSiteName, o => o.MapFrom(s => s.Tent.CampingSite.Name))
+            .ForMember(d => d.GuestName, o => o.MapFrom(s => s.User.FullName));
+        // UserId is never taken from the request - the controller sets it from the JWT.
         CreateMap<ReservationRequest, Reservation>()
+            .ForMember(d => d.UserId, o => o.Ignore())
             .ForMember(d => d.Id, o => o.Ignore())
             .ForMember(d => d.CreatedAt, o => o.Ignore())
             .ForMember(d => d.TotalPrice, o => o.Ignore())
             .ForMember(d => d.Tent, o => o.Ignore())
             .ForMember(d => d.User, o => o.Ignore());
+
+        // ----- Review -----
+        // Response only: there is no Request -> Entity map because the author
+        // comes from the JWT, never from the payload (see ReviewsController).
+        CreateMap<Review, ReviewResponse>()
+            .ForMember(d => d.AuthorName, o => o.MapFrom(s => s.User.FullName));
 
         // ----- Amenity -----
         CreateMap<Amenity, AmenityResponse>();

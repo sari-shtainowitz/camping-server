@@ -34,19 +34,44 @@ public sealed class SqlServerTestDatabase : IAsyncLifetime
 
     public string? UnavailableReason { get; private set; }
 
+    public const string TestDatabaseName = "CampingDb_ConcurrencyTests";
+
     public SqlServerTestDatabase()
     {
+        // Same sources as the API in development: appsettings.json, then the API
+        // project's User Secrets (where the real PostgreSQL password lives - never
+        // in the repo), then environment variables.
         var configuration = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
-            .AddJsonFile("appsettings.json", optional: false)
+            .AddJsonFile("appsettings.json", optional: true)
+            .AddUserSecrets(typeof(Camping.API.Controllers.TentsController).Assembly, optional: true)
             .AddEnvironmentVariables()
             .Build();
 
         ConnectionString =
             Environment.GetEnvironmentVariable("CAMPING_TEST_DB")
             ?? configuration.GetConnectionString("CampingTestDb")
+            ?? FromApplicationConnectionString(configuration.GetConnectionString("CampingDb"))
             ?? throw new InvalidOperationException(
-                "No test connection string. Set ConnectionStrings:CampingTestDb in appsettings.json or the CAMPING_TEST_DB environment variable.");
+                "No test connection string. Set the API's User Secret ConnectionStrings:CampingDb " +
+                "(the tests then use the same server with a separate database), " +
+                "or set the CAMPING_TEST_DB environment variable.");
+    }
+
+    // Reuses the application's server and credentials but ALWAYS swaps in the
+    // dedicated test database, so the fixture can never drop the real CampingDb.
+    private static string? FromApplicationConnectionString(string? applicationConnectionString)
+    {
+        if (string.IsNullOrWhiteSpace(applicationConnectionString))
+        {
+            return null;
+        }
+
+        var builder = new NpgsqlConnectionStringBuilder(applicationConnectionString)
+        {
+            Database = TestDatabaseName
+        };
+        return builder.ConnectionString;
     }
 
     /// <summary>Creates a brand-new context bound to the dedicated test database.</summary>

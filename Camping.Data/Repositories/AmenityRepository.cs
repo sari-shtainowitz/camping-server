@@ -18,34 +18,36 @@ public class AmenityRepository : IAmenityRepository
         _context = context;
     }
 
-    public async Task<List<Amenity>> GetAllAsync()
+    public async Task<Amenity?> GetByIdAsync(int id, CancellationToken cancellationToken)
     {
         return await _context.Amenities
             .AsNoTracking()
-            .ToListAsync();
+            .FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
     }
 
-    public async Task<Amenity?> GetByIdAsync(int id)
+    public Task<bool> NameExistsAsync(string name, int? excludeAmenityId, CancellationToken cancellationToken)
     {
-        return await _context.Amenities
-            .AsNoTracking()
-            .FirstOrDefaultAsync(a => a.Id == id);
+        var lowered = name.ToLower();
+        return _context.Amenities.AnyAsync(
+            a => a.Id != excludeAmenityId && a.Name.ToLower() == lowered,
+            cancellationToken);
     }
 
-    public async Task<PagedResult<Amenity>> GetPagedAsync(AmenityQueryParameters parameters)
+    public async Task<PagedResult<Amenity>> GetPagedAsync(
+        AmenityQueryParameters parameters, CancellationToken cancellationToken)
     {
         IQueryable<Amenity> query = _context.Amenities.AsNoTracking();
 
         if (!string.IsNullOrWhiteSpace(parameters.Name))
         {
             var name = parameters.Name.Trim();
-            // SQL Server LIKE is case-insensitive under the server's CI collation.
-            query = query.Where(a => EF.Functions.Like(a.Name, $"%{name}%"));
+            // ILIKE: PostgreSQL's case-insensitive LIKE.
+            query = query.Where(a => EF.Functions.ILike(a.Name, $"%{name}%"));
         }
 
         query = ApplySort(query, parameters.SortBy, parameters.SortDescending);
 
-        return await query.ToPagedResultAsync(parameters.Page, parameters.PageSize);
+        return await query.ToPagedResultAsync(parameters.Page, parameters.PageSize, cancellationToken);
     }
 
     private static IQueryable<Amenity> ApplySort(
@@ -60,27 +62,27 @@ public class AmenityRepository : IAmenityRepository
         return descending ? query.OrderByDescending(keySelector) : query.OrderBy(keySelector);
     }
 
-    public async Task AddAsync(Amenity amenity)
+    public async Task AddAsync(Amenity amenity, CancellationToken cancellationToken)
     {
-        await _context.Amenities.AddAsync(amenity);
-        await _context.SaveChangesAsync();
+        await _context.Amenities.AddAsync(amenity, cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task UpdateAsync(Amenity amenity)
+    public async Task UpdateAsync(Amenity amenity, CancellationToken cancellationToken)
     {
         _context.Amenities.Update(amenity);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task DeleteAsync(int id)
+    public async Task DeleteAsync(int id, CancellationToken cancellationToken)
     {
-        var amenity = await _context.Amenities.FindAsync(id);
+        var amenity = await _context.Amenities.FindAsync(new object[] { id }, cancellationToken);
         if (amenity is null)
         {
             return;
         }
 
         _context.Amenities.Remove(amenity);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
     }
 }

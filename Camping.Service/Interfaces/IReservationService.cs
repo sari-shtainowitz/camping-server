@@ -9,16 +9,15 @@ namespace Camping.Service.Interfaces;
 /// </summary>
 public interface IReservationService
 {
-    Task<IReadOnlyList<Reservation>> GetAllAsync();
-
     /// <summary>Paged/filtered/sorted list, evaluated in the database.</summary>
-    Task<PagedResult<Reservation>> GetPagedAsync(ReservationQueryParameters parameters);
+    Task<PagedResult<Reservation>> GetPagedAsync(
+        ReservationQueryParameters parameters, CancellationToken cancellationToken);
 
-    Task<Reservation> GetByIdAsync(int id);
+    Task<Reservation> GetByIdAsync(int id, CancellationToken cancellationToken);
 
-    Task<Reservation> CreateAsync(Reservation reservation);
+    Task<Reservation> CreateAsync(Reservation reservation, CancellationToken cancellationToken);
 
-    Task<Reservation> UpdateAsync(int id, Reservation reservation);
+    Task<Reservation> UpdateAsync(int id, Reservation reservation, CancellationToken cancellationToken);
 
-    Task DeleteAsync(int id);
+    Task DeleteAsync(int id, CancellationToken cancellationToken);
 }

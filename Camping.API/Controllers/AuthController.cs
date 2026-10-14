@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using Camping.API.Authentication;
-using Camping.API.DTOs.Requests;
-using Camping.API.DTOs.Responses;
+using Camping.Core.DTOs.Requests;
+using Camping.Core.DTOs.Responses;
 using Camping.Core.Entities;
 using Camping.Core.Enums;
 using Camping.Service.Interfaces;
@@ -33,7 +33,8 @@ public class AuthController : ControllerBase
     /// <summary>Registers a new Customer account and returns a token.</summary>
     [HttpPost("register")]
     [AllowAnonymous]
-    public async Task<ActionResult<AuthResponse>> Register([FromBody] RegisterRequest request)
+    public async Task<ActionResult<AuthResponse>> Register(
+        [FromBody] RegisterRequest request, CancellationToken cancellationToken)
     {
         var input = new User
         {
@@ -42,16 +43,17 @@ public class AuthController : ControllerBase
             PhoneNumber = request.PhoneNumber
         };
 
-        var user = await _authService.RegisterAsync(input, request.Password);
+        var user = await _authService.RegisterAsync(input, request.Password, cancellationToken);
         return CreatedAtAction(nameof(Me), BuildResponse(user));
     }
 
     /// <summary>Exchanges email + password for a JWT.</summary>
     [HttpPost("login")]
     [AllowAnonymous]
-    public async Task<ActionResult<AuthResponse>> Login([FromBody] LoginRequest request)
+    public async Task<ActionResult<AuthResponse>> Login(
+        [FromBody] LoginRequest request, CancellationToken cancellationToken)
     {
-        var user = await _authService.AuthenticateAsync(request.Email, request.Password);
+        var user = await _authService.AuthenticateAsync(request.Email, request.Password, cancellationToken);
         return Ok(BuildResponse(user));
     }
 

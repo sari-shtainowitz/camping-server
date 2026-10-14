@@ -12,8 +12,9 @@ namespace Camping.API.Middleware;
 /// always RFC 7807 <c>application/problem+json</c> and always carries the
 /// request's correlation id, so every error the API returns has the same shape.
 ///
-/// Every handled exception is also logged (Step 13): a lost optimistic-concurrency
-/// race is a normal, recoverable outcome and is logged as <c>Warning</c>;
+/// Every handled exception is also logged (Step 13): a conflict over the limited
+/// resource (a lost optimistic-concurrency race, or a tent that is already
+/// booked) is a normal, recoverable outcome and is logged as <c>Warning</c>;
 /// everything else is logged as <c>Error</c>. Only the exception itself and the
 /// request method/path are logged - never headers or the body.
 /// </summary>
@@ -39,6 +40,15 @@ public sealed class ExceptionHandlingMiddleware
         {
             await _next(context);
         }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            // The client went away and the CancellationToken stopped the work.
+            // Not a failure: nobody is waiting for a response any more.
+            _logger.LogInformation(
+                "Request {Method} {Path} was cancelled by the client (correlationId: {CorrelationId})",
+                context.Request.Method, context.Request.Path.Value,
+                CorrelationIdMiddleware.GetCorrelationId(context));
+        }
         catch (Exception ex)
         {
             Log(context, ex);
@@ -52,11 +62,12 @@ public sealed class ExceptionHandlingMiddleware
         var path = context.Request.Path.Value;
         var correlationId = CorrelationIdMiddleware.GetCorrelationId(context);
 
-        if (ex is ConcurrencyConflictException)
+        if (ex is ConcurrencyConflictException or ResourceConflictException)
         {
-            _logger.LogWarning(ex,
-                "Concurrency conflict on {Method} {Path} (correlationId: {CorrelationId})",
-                method, path, correlationId);
+            // A clash over the limited resource (a tent) - expected and handled.
+            _logger.LogWarning(
+                "Resource conflict on {Method} {Path}: {Reason} (correlationId: {CorrelationId})",
+                method, path, ex.Message, correlationId);
         }
         else
         {
@@ -100,6 +111,7 @@ public sealed class ExceptionHandlingMiddleware
         BusinessRuleException => (StatusCodes.Status400BadRequest, "Bad Request", ex.Message),
         AuthenticationFailedException => (StatusCodes.Status401Unauthorized, "Unauthorized", ex.Message),
         ConcurrencyConflictException => (StatusCodes.Status409Conflict, "Conflict", ex.Message),
+        ResourceConflictException => (StatusCodes.Status409Conflict, "Conflict", ex.Message),
         _ => (StatusCodes.Status500InternalServerError, "Internal Server Error",
               "An unexpected error occurred while processing the request.")
     };
