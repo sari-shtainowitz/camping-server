@@ -102,6 +102,27 @@ public class ReservationRepository : IReservationRepository
             cancellationToken);
     }
 
+    // Projects to just TentId + dates in SQL: the guest, price and id never even
+    // leave the database for this public view.
+    public async Task<List<Reservation>> GetOccupancyAsync(
+        DateOnly from, DateOnly to, CancellationToken cancellationToken)
+    {
+        return await _context.Reservations
+            .AsNoTracking()
+            .Where(r => r.Status != ReservationStatus.Cancelled &&
+                        r.StartDate < to &&
+                        from < r.EndDate)
+            .OrderBy(r => r.TentId)
+            .ThenBy(r => r.StartDate)
+            .Select(r => new Reservation
+            {
+                TentId = r.TentId,
+                StartDate = r.StartDate,
+                EndDate = r.EndDate
+            })
+            .ToListAsync(cancellationToken);
+    }
+
     public Task<bool> ExistsForTentAsync(int tentId, CancellationToken cancellationToken)
     {
         return _context.Reservations.AnyAsync(r => r.TentId == tentId, cancellationToken);

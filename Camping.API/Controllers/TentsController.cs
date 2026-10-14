@@ -42,6 +42,23 @@ public class TentsController : ControllerBase
         return Ok(_mapper.Map<PagedResult<TentResponse>>(page));
     }
 
+    /// <summary>
+    /// Which tents are booked when (non-cancelled bookings overlapping
+    /// [from, to); defaults to today .. one year ahead). Every signed-in user sees
+    /// every tent's booked dates - but no guest names, ids or prices - so a tent
+    /// one guest booked shows as taken for everyone. Each guest's own bookings,
+    /// with full details, stay private under GET /api/reservations.
+    /// </summary>
+    [HttpGet("occupancy")]
+    [ProducesResponseType(typeof(IEnumerable<TentOccupancyResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IEnumerable<TentOccupancyResponse>>> GetOccupancy(
+        [FromQuery] OccupancyQueryParameters parameters, CancellationToken cancellationToken)
+    {
+        var bookings = await _service.GetOccupancyAsync(parameters, cancellationToken);
+        return Ok(_mapper.Map<IEnumerable<TentOccupancyResponse>>(bookings));
+    }
+
     /// <summary>Returns a single tent by id.</summary>
     [HttpGet("{id:int}")]
     [ProducesResponseType(typeof(TentResponse), StatusCodes.Status200OK)]

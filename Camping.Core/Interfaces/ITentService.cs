@@ -13,6 +13,13 @@ public interface ITentService
 
     Task<Tent> GetByIdAsync(int id, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Which tents are booked when, inside the window - visible to every guest,
+    /// with no personal data (see TentOccupancyResponse).
+    /// </summary>
+    Task<IReadOnlyList<Reservation>> GetOccupancyAsync(
+        OccupancyQueryParameters parameters, CancellationToken cancellationToken);
+
     Task<Tent> CreateAsync(Tent tent, CancellationToken cancellationToken);
 
     Task<Tent> UpdateAsync(int id, Tent tent, CancellationToken cancellationToken);

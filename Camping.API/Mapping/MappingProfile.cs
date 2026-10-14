@@ -41,6 +41,8 @@ public class MappingProfile : Profile
 
         // ----- Tent -----
         CreateMap<Tent, TentResponse>();
+        // Public occupancy: only the tent and the dates of a booking.
+        CreateMap<Reservation, TentOccupancyResponse>();
         CreateMap<TentRequest, Tent>()
             .ForMember(d => d.Id, o => o.Ignore())
             .ForMember(d => d.RowVersion, o => o.Ignore())

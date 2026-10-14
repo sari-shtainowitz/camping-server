@@ -44,6 +44,29 @@ public class TentService : ITentService
         return tent;
     }
 
+    /// <summary>Longest window a client may ask for in one call.</summary>
+    public const int MaxOccupancyDays = 731;
+
+    public async Task<IReadOnlyList<Reservation>> GetOccupancyAsync(
+        OccupancyQueryParameters parameters, CancellationToken cancellationToken)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var from = parameters.From is DateTime f ? DateOnly.FromDateTime(f) : today;
+        var to = parameters.To is DateTime t ? DateOnly.FromDateTime(t) : from.AddYears(1);
+
+        if (to <= from)
+        {
+            throw new BusinessRuleException("'to' must be after 'from'.");
+        }
+
+        if (to.DayNumber - from.DayNumber > MaxOccupancyDays)
+        {
+            throw new BusinessRuleException($"The date window cannot be longer than {MaxOccupancyDays} days.");
+        }
+
+        return await _reservations.GetOccupancyAsync(from, to, cancellationToken);
+    }
+
     public async Task<Tent> CreateAsync(Tent tent, CancellationToken cancellationToken)
     {
         var label = (tent.Label ?? string.Empty).Trim();

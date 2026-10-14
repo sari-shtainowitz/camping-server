@@ -27,6 +27,12 @@ public interface IReservationRepository
         int tentId, DateOnly startDate, DateOnly endDate, int? excludeReservationId,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// The non-cancelled reservations that overlap [from, to), with only the
+    /// tent id and dates filled in - for the public occupancy view.
+    /// </summary>
+    Task<List<Reservation>> GetOccupancyAsync(DateOnly from, DateOnly to, CancellationToken cancellationToken);
+
     Task<bool> ExistsForTentAsync(int tentId, CancellationToken cancellationToken);
 
     Task<bool> ExistsForUserAsync(int userId, CancellationToken cancellationToken);

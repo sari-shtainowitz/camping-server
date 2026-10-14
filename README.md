@@ -122,6 +122,7 @@ Register in the client to get more Customers.
 |----------|-----------|-----|
 | Auth | `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me` | anyone / signed in |
 | Tents | `GET /api/tents` (paged, filter: type, minCapacity, price range, isActive; sort), `GET /api/tents/{id}`, `POST`, `PUT`, `DELETE` | read: signed in, write: Admin |
+| Tent occupancy | `GET /api/tents/occupancy?from=&to=` - which tents are booked on which dates, **for all guests**, with no personal data | signed in |
 | Camping sites, Amenities | same CRUD shape (`/api/camping-sites`, `/api/amenities`); a camping site is returned with its amenities (many-to-many) | read: signed in, write: Admin |
 | Reservations | `GET /api/reservations` (paged), `GET /{id}`, `POST`, `PUT /{id}`, `DELETE /{id}` | Customer books; owners or Admin read/change |
 | Users | `GET /api/users`, `GET /{id}`, `PUT /{id}`, `DELETE /{id}` | Admin |
@@ -134,6 +135,12 @@ problem-JSON shape (`title`, `status`, `detail`, `instance`) with the request's 
 Authorization is enforced **on the server**: a Customer always books as the user
 in their JWT (a `userId` in the body is ignored), only sees their own
 reservations, and gets `403` on anyone else's.
+
+**Privacy vs. availability:** a guest's reservations (who, price, id) are
+private - `GET /api/reservations` returns only the caller's own. Availability is
+shared: `GET /api/tents/occupancy` returns just *tent + dates* of every active
+booking, so a tent one guest booked shows as taken for everyone in the client's
+tent list and map, before they try to pay.
 
 **Validation, two levels:**
 * *Shape* - Data Annotations on the request DTOs (`[Required]`, `[Range]`,
@@ -198,7 +205,7 @@ Logs go to the console and `Camping.API/bin/.../logs/`.
 dotnet test
 ```
 
-**22 tests:**
+**25 tests:**
 
 * `ReservationServiceTests` (10) - xUnit + Moq, service layer with mocked
   repositories: a valid booking, every rejection reason, an already-booked tent
@@ -207,6 +214,8 @@ dotnet test
 * `ReservationsControllerAuthorizationTests` (9) - the real controller with a
   JWT-like `ClaimsPrincipal`: ownership (403), Admin access, a Customer cannot
   list, book or move a reservation as another user.
+* `TentOccupancyTests` (3) - the shared occupancy view: the requested window, the
+  default window (today .. one year), and rejecting a window that ends before it starts.
 * `TentConcurrencyTests` (3) - against real PostgreSQL: two `DbContext`s, the
   second save gets `DbUpdateConcurrencyException`; a booking rotates the tent's
   token; the date-overlap query's boundaries.
