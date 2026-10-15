@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+**/logs/
+.git/
+.vs/
+.vscode/
+.idea/
+Client/
+Camping.Tests/
+**/*.user
+**/secrets.json
+**/.env*

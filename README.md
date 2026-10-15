@@ -240,3 +240,20 @@ Only a demonstration of the server:
    *"הדגמת התנגשות (409)"* on the checkout page: the same booking is sent twice at
    once, the server accepts one and rejects the other with 409.
 5. Public reviews page.
+
+---
+
+## Deploying (optional - the course runs everything locally)
+
+The repo includes a `Dockerfile`, so the API can run on any Docker host, e.g.
+Render (*New → Web Service → Docker*). Set these environment variables there -
+they are never in the repo:
+
+| Variable | Value |
+|----------|-------|
+| `ConnectionStrings__CampingDb` | `Host=…;Port=5432;Database=…;Username=…;Password=…` (Npgsql key=value format) |
+| `Jwt__Key` | a long random string (32+ characters) |
+
+The container listens on `$PORT` (Render sets it) and applies the migrations on
+start-up, so an empty database is ready on first boot. The React client deploys
+as a static site; it proxies `/api/*` to this service with a rewrite rule.
